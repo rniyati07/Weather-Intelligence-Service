@@ -6,12 +6,14 @@ from fastapi import FastAPI
 from app.infrastructure.config.settings import get_settings
 from app.infrastructure.observability.logging import configure_logging
 from app.infrastructure.observability.request_context import RequestContextMiddleware
+from app.infrastructure.persistence.session import get_database
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     configure_logging(get_settings())
     yield
+    await get_database().dispose()
 
 
 def create_app() -> FastAPI:
