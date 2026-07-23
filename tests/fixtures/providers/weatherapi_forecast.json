@@ -1,0 +1,31 @@
+{
+  "location": {"lat": 15.25, "lon": 74.125},
+  "forecast": {
+    "forecastday": [
+      {
+        "date": "2026-08-01",
+        "day": {
+          "maxtemp_c": 31.0,
+          "mintemp_c": 24.0,
+          "avghumidity": 80,
+          "maxwind_kph": 22.0,
+          "totalprecip_mm": 15.2,
+          "daily_chance_of_rain": 70,
+          "condition": {"code": 1063, "text": "Patchy rain possible"}
+        }
+      },
+      {
+        "date": "2026-08-02",
+        "day": {
+          "maxtemp_c": 29.5,
+          "mintemp_c": 23.2,
+          "avghumidity": 58,
+          "maxwind_kph": 12.0,
+          "totalprecip_mm": 0.0,
+          "daily_chance_of_rain": 5,
+          "condition": {"code": 1000, "text": "Sunny"}
+        }
+      }
+    ]
+  }
+}

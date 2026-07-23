@@ -1,0 +1,47 @@
+{
+  "list": [
+    {
+      "dt": 1785542400,
+      "dt_txt": "2026-08-01 00:00:00",
+      "main": {"temp_min": 24.1, "temp_max": 26.3, "humidity": 82},
+      "weather": [{"id": 500, "main": "Rain"}],
+      "wind": {"speed": 3.5},
+      "pop": 0.6,
+      "rain": {"3h": 4.1}
+    },
+    {
+      "dt": 1785553200,
+      "dt_txt": "2026-08-01 03:00:00",
+      "main": {"temp_min": 25.0, "temp_max": 28.5, "humidity": 78},
+      "weather": [{"id": 502, "main": "Rain"}],
+      "wind": {"speed": 5.1},
+      "pop": 0.7,
+      "rain": {"3h": 8.3}
+    },
+    {
+      "dt": 1785564000,
+      "dt_txt": "2026-08-01 06:00:00",
+      "main": {"temp_min": 26.0, "temp_max": 31.2, "humidity": 70},
+      "weather": [{"id": 501, "main": "Rain"}],
+      "wind": {"speed": 4.2},
+      "pop": 0.5,
+      "rain": {"3h": 0.0}
+    },
+    {
+      "dt": 1785628800,
+      "dt_txt": "2026-08-02 00:00:00",
+      "main": {"temp_min": 23.5, "temp_max": 27.0, "humidity": 60},
+      "weather": [{"id": 800, "main": "Clear"}],
+      "wind": {"speed": 2.8},
+      "pop": 0.05
+    },
+    {
+      "dt": 1785639600,
+      "dt_txt": "2026-08-02 03:00:00",
+      "main": {"temp_min": 24.8, "temp_max": 29.0, "humidity": 55},
+      "weather": [{"id": 800, "main": "Clear"}],
+      "wind": {"speed": 2.2},
+      "pop": 0.0
+    }
+  ]
+}
