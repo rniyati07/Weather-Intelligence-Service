@@ -1,0 +1,124 @@
+{
+  "daily_intelligence": [
+    {
+      "activity_suitability": [
+        {
+          "activity": "outdoor_sightseeing",
+          "score": 0
+        },
+        {
+          "activity": "beach",
+          "score": 0
+        },
+        {
+          "activity": "indoor_museum",
+          "score": 100
+        }
+      ],
+      "date": "2026-08-01",
+      "packing_recommendations": [
+        "waterproof jacket",
+        "windbreaker",
+        "light cottons",
+        "sunscreen",
+        "quick-dry footwear"
+      ],
+      "risk_assessment": {
+        "overall_risk_level": "high",
+        "risk_factors": [
+          {
+            "description": "Daytime high of 36.0°C exceeds the high-heat threshold (35.0°C).",
+            "rule": "temp_max_gt_high",
+            "severity": "high",
+            "type": "heat"
+          },
+          {
+            "description": "90% chance of precipitation exceeds the high-rain threshold (80%).",
+            "rule": "precip_prob_gt_high",
+            "severity": "high",
+            "type": "rain"
+          },
+          {
+            "description": "Wind speed of 45 km/h exceeds the high-wind threshold (40 km/h).",
+            "rule": "wind_speed_gt_high",
+            "severity": "high",
+            "type": "wind"
+          },
+          {
+            "description": "Thunderstorms are expected.",
+            "rule": "condition_is_thunderstorm",
+            "severity": "high",
+            "type": "storm"
+          }
+        ]
+      },
+      "summary": {
+        "condition": "thunderstorm",
+        "precipitation_probability": 0.9,
+        "temp_max_c": 36.0,
+        "temp_min_c": 24.0,
+        "wind_speed_kph": 45.0
+      },
+      "travel_advisory": "avoid"
+    },
+    {
+      "activity_suitability": [
+        {
+          "activity": "outdoor_sightseeing",
+          "score": 80
+        },
+        {
+          "activity": "beach",
+          "score": 70
+        },
+        {
+          "activity": "indoor_museum",
+          "score": 60
+        }
+      ],
+      "date": "2026-08-02",
+      "packing_recommendations": [],
+      "risk_assessment": {
+        "overall_risk_level": "low",
+        "risk_factors": []
+      },
+      "summary": {
+        "condition": "clear",
+        "precipitation_probability": 0.05,
+        "temp_max_c": 27.0,
+        "temp_min_c": 20.0,
+        "wind_speed_kph": 10.0
+      },
+      "travel_advisory": "proceed"
+    }
+  ],
+  "location": {
+    "id": "15.25,74.125",
+    "latitude": 15.25,
+    "longitude": 74.125,
+    "name": "Goa"
+  },
+  "narrative": null,
+  "period": {
+    "end_date": "2026-08-02",
+    "start_date": "2026-08-01"
+  },
+  "trip_summary": {
+    "best_days": [
+      "2026-08-02"
+    ],
+    "overall_packing_list": [
+      "waterproof jacket",
+      "windbreaker",
+      "light cottons",
+      "sunscreen",
+      "quick-dry footwear"
+    ],
+    "overall_risk_level": "high",
+    "travel_confidence": 0.6975000000000001,
+    "trip_suitability_score": 52,
+    "worst_days": [
+      "2026-08-01"
+    ]
+  }
+}

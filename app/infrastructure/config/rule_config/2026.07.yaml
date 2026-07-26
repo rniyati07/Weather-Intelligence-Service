@@ -1,0 +1,65 @@
+# Weather Intelligence Service — rule configuration.
+#
+# Every threshold, weight, and packing rule the deterministic engines in
+# domain/engines/ read from. Changing a number here changes the product's
+# behavior without a code change; bumping `version` (and the filename)
+# creates a new, independently auditable rule set (RULE_CONFIG_VERSION).
+
+version: "2026.07"
+
+# Thresholds domain/engines/insight/rules.py evaluates each reading against.
+insight_thresholds:
+  heat:
+    moderate_temp_max_c: 30.0
+    high_temp_max_c: 35.0
+  cold:
+    moderate_temp_min_c: 10.0
+    high_temp_min_c: 5.0
+  rain:
+    moderate_precip_probability: 0.6
+    high_precip_probability: 0.8
+  wind:
+    moderate_wind_speed_kph: 25.0
+    high_wind_speed_kph: 40.0
+
+# Base score (0-100) per ActivityCategory, plus penalties/bonuses applied
+# per triggered RiskFactorType (doubled when that type's worst severity for
+# the day is "high" rather than "moderate"). Omitted types default to 0.
+activity_scoring:
+  outdoor_sightseeing:
+    base_score: 80
+    penalties: { rain: 30, storm: 50, wind: 20, heat: 15, cold: 15 }
+    bonuses: {}
+  beach:
+    base_score: 70
+    penalties: { rain: 40, storm: 60, wind: 15, cold: 30 }
+    bonuses: { heat: 10 }
+  indoor_museum:
+    base_score: 60
+    penalties: { storm: 5 }
+    bonuses: { rain: 20, heat: 5 }
+
+# Packing items contributed by each triggered RiskFactorType.
+packing_rules:
+  rain: ["waterproof jacket", "quick-dry footwear"]
+  storm: ["waterproof jacket"]
+  heat: ["sunscreen", "light cottons"]
+  cold: ["warm layers"]
+  wind: ["windbreaker"]
+
+# The stable order packing.py renders the deduplicated union in.
+packing_item_order:
+  - "waterproof jacket"
+  - "windbreaker"
+  - "warm layers"
+  - "light cottons"
+  - "sunscreen"
+  - "quick-dry footwear"
+
+# travelConfidence combination weights (TRD §7.5). Must sum to 1.0.
+confidence:
+  horizon_weight: 0.4
+  agreement_weight: 0.2
+  completeness_weight: 0.4
+  max_horizon_days: 16
+  single_provider_neutral_factor: 0.8
