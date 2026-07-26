@@ -76,3 +76,20 @@ class TestFetch:
 
         assert len(readings) == 1
         assert readings[0].date == date(2026, 8, 1)
+
+    @respx.mock
+    async def test_invalid_aggregated_day_is_dropped_not_fabricated(
+        self, adapter: OpenWeatherAdapter
+    ) -> None:
+        bad_fixture = json.loads(json.dumps(_FIXTURE))
+        # Every 2026-08-01 entry gets an impossible temp range once aggregated
+        # (min(temp_min) > max(temp_max)) -> the whole day must be dropped.
+        for entry in bad_fixture["list"][:3]:
+            entry["main"]["temp_min"] = 100.0
+            entry["main"]["temp_max"] = 10.0
+        respx.get(openweather._BASE_URL).mock(return_value=httpx.Response(200, json=bad_fixture))
+
+        readings = await adapter.fetch(15.25, 74.125, date(2026, 8, 1), date(2026, 8, 2))
+
+        assert len(readings) == 1
+        assert readings[0].date == date(2026, 8, 2)

@@ -70,3 +70,17 @@ class TestFetch:
 
         assert len(readings) == 1
         assert readings[0].date == date(2026, 8, 1)
+
+    @respx.mock
+    async def test_invalid_reading_is_dropped_not_fabricated(
+        self, adapter: WeatherApiAdapter
+    ) -> None:
+        bad_fixture = json.loads(json.dumps(_FIXTURE))
+        # temp_max < temp_min on day 1 -> must be dropped, not coerced.
+        bad_fixture["forecast"]["forecastday"][0]["day"]["maxtemp_c"] = 10.0
+        respx.get(weatherapi._BASE_URL).mock(return_value=httpx.Response(200, json=bad_fixture))
+
+        readings = await adapter.fetch(15.25, 74.125, date(2026, 8, 1), date(2026, 8, 2))
+
+        assert len(readings) == 1
+        assert readings[0].date == date(2026, 8, 2)
