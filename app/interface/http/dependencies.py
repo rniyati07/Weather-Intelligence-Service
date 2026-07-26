@@ -12,10 +12,12 @@ from typing import Annotated
 from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.domain.ports.provider_registry import ProviderRegistryPort
 from app.domain.ports.repository import WeatherRepository
 from app.infrastructure.config.settings import Settings, get_settings
 from app.infrastructure.persistence.repositories import SqlAlchemyWeatherRepository
 from app.infrastructure.persistence.session import get_database
+from app.infrastructure.providers.registry import get_provider_registry
 
 
 def get_app_settings() -> Settings:
@@ -46,3 +48,11 @@ def get_weather_repository(session: DbSessionDep) -> WeatherRepository:
 
 
 WeatherRepositoryDep = Annotated[WeatherRepository, Depends(get_weather_repository)]
+
+
+def get_provider_registry_dependency() -> ProviderRegistryPort:
+    """FastAPI dependency returning the process-wide, cached `ProviderRegistry`."""
+    return get_provider_registry()
+
+
+ProviderRegistryDep = Annotated[ProviderRegistryPort, Depends(get_provider_registry_dependency)]

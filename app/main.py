@@ -7,6 +7,7 @@ from app.infrastructure.config.settings import get_settings
 from app.infrastructure.observability.logging import configure_logging
 from app.infrastructure.observability.request_context import RequestContextMiddleware
 from app.infrastructure.persistence.session import get_database
+from app.infrastructure.providers.registry import get_provider_registry
 
 
 @asynccontextmanager
@@ -14,6 +15,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     configure_logging(get_settings())
     yield
     await get_database().dispose()
+    await get_provider_registry().aclose()
 
 
 def create_app() -> FastAPI:
