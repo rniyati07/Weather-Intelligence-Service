@@ -9,6 +9,9 @@ REQUIRED_ENV = {
     "API_KEYS": "dev_key_local",
     "DATABASE_URL": "postgresql+asyncpg://wis:wis@localhost:5432/wis",
     "REDIS_URL": "redis://localhost:6379/0",
+    "LLM_API_KEY": "test-llm-key",
+    "LLM_MODEL": "test-model",
+    "LLM_BASE_URL": "https://api.example-llm.test/v1",
 }
 
 
@@ -41,7 +44,9 @@ class TestValidEnvironment:
         assert settings.api_keys == ["dev_key_local"]
         assert settings.provider_priority_forecast == ["open_meteo", "openweather", "weatherapi"]
         assert settings.provider_priority_historical == ["meteostat"]
-        assert settings.narration_enabled is True
+        assert settings.llm_api_key == "test-llm-key"
+        assert settings.llm_model == "test-model"
+        assert settings.llm_base_url == "https://api.example-llm.test/v1"
         assert settings.rule_config_version == "2026.07"
         assert settings.max_forecast_horizon_days == 16
 
@@ -83,11 +88,32 @@ class TestFailFast:
         assert "API_KEYS" in message
         assert "DATABASE_URL" in message
         assert "REDIS_URL" in message
+        assert "LLM_API_KEY" in message
+        assert "LLM_MODEL" in message
+        assert "LLM_BASE_URL" in message
 
     def test_empty_api_keys_is_rejected(self, monkeypatch):
         _set_env(monkeypatch, API_KEYS="")
         with pytest.raises(ValidationError):
             get_settings()
+
+
+class TestMandatoryNarrationConfig:
+    """AI narration is mandatory: startup must fail without a fully configured LLM."""
+
+    @pytest.mark.parametrize("missing_var", ["LLM_API_KEY", "LLM_MODEL", "LLM_BASE_URL"])
+    def test_startup_fails_when_an_llm_variable_is_missing(self, monkeypatch, missing_var):
+        env = {k: v for k, v in REQUIRED_ENV.items() if k != missing_var}
+        for key, value in env.items():
+            monkeypatch.setenv(key, value)
+
+        with pytest.raises(RuntimeError, match=missing_var):
+            get_settings()
+
+    def test_startup_succeeds_when_all_llm_variables_are_present(self, monkeypatch):
+        _set_env(monkeypatch)
+        settings = get_settings()
+        assert settings.llm_api_key and settings.llm_model and settings.llm_base_url
 
 
 class TestValidation:

@@ -1,10 +1,11 @@
-"""Fulfills `NarrationPort`: constrained-prompt LLM narration with a
-guaranteed deterministic fallback, and narration caching.
+"""Fulfills `NarrationPort`: constrained-prompt LLM narration, mandatory.
 
-Build prompt -> call LLM -> validate output -> `Narrative`. Every failure
-mode (disabled, missing key, timeout, transport error, invalid/empty
-output) falls back to `fallback.build_fallback_narrative` instead of
-raising — narration failure is never an exception the caller has to handle.
+Build prompt -> call LLM -> validate output -> `Narrative`. There is no
+fallback path: every failure mode (timeout, transport error, repeated
+server errors, or invalid/empty output) raises `NarrationFailedError`
+instead of silently substituting a template. `Settings` requires
+`LLM_API_KEY`/`LLM_MODEL`/`LLM_BASE_URL` at startup (Phase 2), so by the
+time this module runs, a real `LlmClient` is always available.
 """
 
 import json
@@ -20,8 +21,7 @@ import httpx
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from app.domain.entities.weather_intelligence import Narrative, WeatherIntelligence
-from app.domain.ports.narration import NarrationPort
-from app.infrastructure.ai.fallback import build_fallback_narrative
+from app.domain.ports.narration import NarrationFailedError, NarrationPort
 from app.infrastructure.ai.llm_client import LlmClient, LlmClientError, LlmTimeoutError
 from app.infrastructure.config.settings import Settings, get_settings
 
@@ -38,6 +38,7 @@ class LlmClientProtocol(Protocol):
     model: str
 
     async def complete(self, *, system_prompt: str, user_content: str) -> str: ...
+
 
 _PROMPTS_DIR = Path(__file__).parent / "prompts"
 #: Untrusted output: a hard length cap independent of (and a backstop for)
@@ -77,17 +78,20 @@ CacheKey = tuple[str, str, str, str, str]
 
 
 class NarrationService(NarrationPort):
-    """LLM narration behind `NarrationPort`, with a guaranteed fallback and a cache."""
+    """Mandatory LLM narration behind `NarrationPort`, with a success cache.
+
+    Only successful narrations are cached — a failure raises immediately
+    and is never cached, so the next request retries the LLM rather than
+    being stuck replaying a stale error.
+    """
 
     def __init__(
         self,
         *,
-        llm_client: LlmClientProtocol | None,
-        narration_enabled: bool,
+        llm_client: LlmClientProtocol,
         http_client: httpx.AsyncClient | None = None,
     ) -> None:
         self._llm_client = llm_client
-        self._narration_enabled = narration_enabled
         self._http_client = http_client
         self._cache: dict[CacheKey, Narrative] = {}
 
@@ -119,25 +123,25 @@ class NarrationService(NarrationPort):
     async def _narrate_uncached(
         self, intelligence: WeatherIntelligence, language: str
     ) -> Narrative:
-        if not self._narration_enabled or self._llm_client is None:
-            return build_fallback_narrative(intelligence)
-
+        prompt = render_prompt(intelligence, language)
         try:
-            prompt = render_prompt(intelligence, language)
             raw_text = await self._llm_client.complete(
                 system_prompt=prompt, user_content="Write the narration now."
             )
-        except LlmTimeoutError:
+        except LlmTimeoutError as exc:
             logger.warning("narration_timeout")
-            return build_fallback_narrative(intelligence)
+            raise NarrationFailedError("Narration timed out.") from exc
         except LlmClientError as exc:
             logger.warning("narration_transport_failure", extra={"error": str(exc)})
-            return build_fallback_narrative(intelligence)
+            raise NarrationFailedError(f"Narration request failed: {exc}") from exc
 
         summary_text = raw_text.strip()
-        if not summary_text or len(summary_text) > _MAX_SUMMARY_LENGTH:
+        if not summary_text:
+            logger.warning("narration_invalid_output", extra={"reason": "empty"})
+            raise NarrationFailedError("LLM returned empty narration output.")
+        if len(summary_text) > _MAX_SUMMARY_LENGTH:
             logger.warning("narration_invalid_output", extra={"length": len(summary_text)})
-            return build_fallback_narrative(intelligence)
+            raise NarrationFailedError("LLM returned narration output over the length cap.")
 
         return Narrative(
             generated_by_llm=True,
@@ -148,29 +152,21 @@ class NarrationService(NarrationPort):
 
 
 def build_narration_service(settings: Settings, http_client: httpx.AsyncClient) -> NarrationService:
-    """Wire an `LlmClient` from Phase 2 settings, or `None` when narration can't run.
+    """Wire an `LlmClient` from Phase 2 settings.
 
-    `is_configured` here means: an API key, base URL, and model are all
-    present. Missing any of them means the LLM client is never constructed
-    and every call falls back — one of the guide's explicit fallback
-    triggers ("API key is missing").
+    `Settings` requires `LLM_API_KEY`/`LLM_MODEL`/`LLM_BASE_URL` at
+    application startup, so this always constructs a real client — there is
+    no "unconfigured" branch to fall back from.
     """
-    llm_client: LlmClient | None = None
-    if settings.llm_api_key and settings.llm_base_url and settings.llm_model:
-        llm_client = LlmClient(
-            http_client,
-            base_url=settings.llm_base_url,
-            api_key=settings.llm_api_key,
-            model=settings.llm_model,
-            timeout_seconds=settings.llm_timeout_seconds,
-            max_output_tokens=settings.llm_max_output_tokens,
-        )
-
-    return NarrationService(
-        llm_client=llm_client,
-        narration_enabled=settings.narration_enabled,
-        http_client=http_client,
+    llm_client = LlmClient(
+        http_client,
+        base_url=settings.llm_base_url,
+        api_key=settings.llm_api_key,
+        model=settings.llm_model,
+        timeout_seconds=settings.llm_timeout_seconds,
+        max_output_tokens=settings.llm_max_output_tokens,
     )
+    return NarrationService(llm_client=llm_client, http_client=http_client)
 
 
 @lru_cache

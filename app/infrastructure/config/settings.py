@@ -85,11 +85,10 @@ class Settings(BaseSettings):
     provider_retry_backoff_seconds: float = Field(default=0.3, ge=0)
     provider_health_ttl_seconds: int = Field(default=60, gt=0)
 
-    # ---- AI narration ----
-    narration_enabled: bool = True
-    llm_api_key: str = ""
-    llm_model: str = ""
-    llm_base_url: str = ""
+    # ---- AI narration (mandatory: every narration request requires a working LLM) ----
+    llm_api_key: str = Field(...)
+    llm_model: str = Field(...)
+    llm_base_url: str = Field(...)
     llm_timeout_seconds: float = Field(default=8, gt=0)
     llm_max_output_tokens: int = Field(default=400, gt=0)
 
@@ -139,7 +138,10 @@ def get_settings() -> Settings:
     """Return the process-wide `Settings` instance, constructed on first call.
 
     Fails fast with a clear, variable-naming error if a required environment
-    variable (`API_KEYS`, `DATABASE_URL`, `REDIS_URL`) is missing.
+    variable (`API_KEYS`, `DATABASE_URL`, `REDIS_URL`, `LLM_API_KEY`,
+    `LLM_MODEL`, `LLM_BASE_URL`) is missing. The three `LLM_*` variables are
+    required because AI narration is mandatory: there is no code path that
+    serves a narration request without a configured LLM.
     """
     try:
         return Settings()  # type: ignore[call-arg]
