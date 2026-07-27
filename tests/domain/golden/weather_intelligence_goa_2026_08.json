@@ -103,6 +103,7 @@
     "end_date": "2026-08-02",
     "start_date": "2026-08-01"
   },
+  "rule_config_version": "test-2026.07",
   "trip_summary": {
     "best_days": [
       "2026-08-02"

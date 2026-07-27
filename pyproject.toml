@@ -23,6 +23,7 @@ dependencies = [
   "tenacity",
   "structlog",
   "pyyaml",
+  "jinja2",
 ]
 
 [project.optional-dependencies]

@@ -12,8 +12,10 @@ from typing import Annotated
 from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.domain.ports.narration import NarrationPort
 from app.domain.ports.provider_registry import ProviderRegistryPort
 from app.domain.ports.repository import WeatherRepository
+from app.infrastructure.ai.narration_service import get_narration_service
 from app.infrastructure.config.settings import Settings, get_settings
 from app.infrastructure.persistence.repositories import SqlAlchemyWeatherRepository
 from app.infrastructure.persistence.session import get_database
@@ -56,3 +58,11 @@ def get_provider_registry_dependency() -> ProviderRegistryPort:
 
 
 ProviderRegistryDep = Annotated[ProviderRegistryPort, Depends(get_provider_registry_dependency)]
+
+
+def get_narration_service_dependency() -> NarrationPort:
+    """FastAPI dependency returning the process-wide, cached `NarrationService`."""
+    return get_narration_service()
+
+
+NarrationServiceDep = Annotated[NarrationPort, Depends(get_narration_service_dependency)]

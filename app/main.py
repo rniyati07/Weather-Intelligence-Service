@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
+from app.infrastructure.ai.narration_service import get_narration_service
 from app.infrastructure.config.settings import get_settings
 from app.infrastructure.observability.logging import configure_logging
 from app.infrastructure.observability.request_context import RequestContextMiddleware
@@ -16,6 +17,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     yield
     await get_database().dispose()
     await get_provider_registry().aclose()
+    await get_narration_service().aclose()
 
 
 def create_app() -> FastAPI:

@@ -106,16 +106,35 @@ class TripSummary:
 
 
 @dataclass(frozen=True, slots=True)
+class Narrative:
+    """Optional AI narration attached to a `WeatherIntelligence` (API Spec §9.6).
+
+    Populated only by a separate narration step (Phase 8's `NarrationPort`,
+    wired to the API in Phase 9) — the Intelligence Builder itself never
+    produces one; it always sets `WeatherIntelligence.narrative = None`.
+    """
+
+    generated_by_llm: bool
+    summary_text: str
+    fallback_used: bool
+    model_used: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class WeatherIntelligence:
     """The root payload (API Spec §9.1). `narrative` is always `None` here —
-    the Intelligence Builder never calls AI; only `GenerateNarrative` (Phase
-    8/9) may populate it, on a separate object built from this one."""
+    the Intelligence Builder never calls AI; only a separate narration step
+    (Phase 8/9) may populate it, on top of this same object's data.
+    `rule_config_version` stamps which rule set produced this computation
+    (guide §Phase 7 step 1), and is also the narration cache's version key.
+    """
 
     location: ResolvedLocation
     period: Period
     daily_intelligence: list[DailyIntelligence]
     trip_summary: TripSummary
-    narrative: None = None
+    rule_config_version: str
+    narrative: Narrative | None = None
 
 
 def build_weather_intelligence(
@@ -204,6 +223,7 @@ def build_weather_intelligence(
         period=period,
         daily_intelligence=daily_intelligence,
         trip_summary=trip_summary,
+        rule_config_version=rule_config.version,
     )
 
 
@@ -211,6 +231,7 @@ __all__ = [
     "ActivitySuitability",
     "DailyIntelligence",
     "DailySummary",
+    "Narrative",
     "Period",
     "ResolvedLocation",
     "RiskAssessment",
