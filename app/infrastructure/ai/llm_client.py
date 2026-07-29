@@ -68,7 +68,29 @@ class LlmClient:
                 )
                 response.raise_for_status()
                 data = response.json()
-                return str(data["choices"][0]["message"]["content"])
+                choice = data["choices"][0]
+                content = choice["message"].get("content")
+                finish_reason = choice.get("finish_reason")
+
+                # A reasoning model spends part of `max_tokens` on hidden
+                # thinking before emitting text. If the budget runs out the
+                # response comes back either as `content: null` or as text
+                # cut off mid-sentence, both with `finish_reason: "length"`.
+                # Neither may reach a user: `str(None)` would yield the
+                # literal "None", and truncated prose is worse than no
+                # narration at all, since both pass a non-empty check.
+                if not isinstance(content, str):
+                    raise LlmClientError(
+                        f"LLM returned no text content (finish_reason={finish_reason!r}); "
+                        f"the model may have exhausted "
+                        f"max_tokens={self._max_output_tokens} on reasoning before emitting text."
+                    )
+                if finish_reason == "length":
+                    raise LlmClientError(
+                        f"LLM output was truncated (finish_reason='length') at "
+                        f"max_tokens={self._max_output_tokens}; raise LLM_MAX_OUTPUT_TOKENS."
+                    )
+                return content
             except httpx.TimeoutException as exc:
                 if is_last_attempt:
                     raise LlmTimeoutError(f"LLM call timed out: {exc}") from exc
