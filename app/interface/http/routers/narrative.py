@@ -32,7 +32,7 @@ router = APIRouter(prefix="/locations/{location_id}", tags=["narrative"])
 
 @router.post(
     "/intelligence/narrative",
-    response_model=ResponseEnvelope,
+    response_model=ResponseEnvelope[NarrativeViewSchema],
     summary="Generate an AI narrative",
     description=(
         "Natural-language restatement of the deterministic intelligence for a location "
@@ -56,7 +56,7 @@ async def generate_narrative(
     request_id: RequestIdDep,
     _api_key: ApiKeyDep,
     _rate_limit: RateLimitDep,
-) -> ResponseEnvelope:
+) -> ResponseEnvelope[NarrativeViewSchema]:
     if body.language not in SUPPORTED_LANGUAGES:
         raise ValidationFailedError(
             f"Unsupported language '{body.language}'.",

@@ -7,7 +7,7 @@ from snake_case domain attributes while serialising to camelCase.
 """
 
 from datetime import date, datetime
-from typing import Any, Literal
+from typing import Generic, Literal, TypeVar
 
 from pydantic import BaseModel, ConfigDict
 from pydantic.alias_generators import to_camel
@@ -77,10 +77,25 @@ class MetadataSchema(CamelModel):
     degraded: bool | None = None
 
 
-class ResponseEnvelope(CamelModel):
-    """API Spec §6 — the one envelope every response uses, success or failure."""
+#: Payload type carried in `data`. Making the envelope generic is what lets
+#: each route publish its concrete response schema in OpenAPI — an untyped
+#: `data` erases the payload from the contract and breaks client codegen.
+PayloadT = TypeVar("PayloadT")
+
+
+class ResponseEnvelope(CamelModel, Generic[PayloadT]):
+    """API Spec §6 — the one envelope every response uses, success or failure.
+
+    Parameterised per endpoint (e.g. `ResponseEnvelope[WeatherIntelligenceSchema]`)
+    so Swagger renders the real payload. The wire format is unchanged: the
+    four keys and their values are exactly as before.
+    """
 
     success: bool
-    data: Any | None
+    data: PayloadT | None
     metadata: MetadataSchema
     error: ErrorSchema | None = None
+
+
+#: Failure responses carry no payload; `data` is always `null` (API Spec §6).
+ErrorEnvelope = ResponseEnvelope[None]

@@ -21,7 +21,7 @@ router = APIRouter(prefix="/providers", tags=["operations"])
 
 @router.get(
     "/health",
-    response_model=ResponseEnvelope,
+    response_model=ResponseEnvelope[ProviderHealthViewSchema],
     summary="Get provider health",
     description=(
         "Operational availability of each upstream weather provider. Restricted to "
@@ -37,7 +37,7 @@ async def get_provider_health(
     use_case: ProviderHealthUseCaseDep,
     request_id: RequestIdDep,
     _ops_key: OpsApiKeyDep,
-) -> ResponseEnvelope:
+) -> ResponseEnvelope[ProviderHealthViewSchema]:
     entries = use_case.execute()
     view = ProviderHealthViewSchema(
         providers=[

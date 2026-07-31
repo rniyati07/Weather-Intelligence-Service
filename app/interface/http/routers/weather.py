@@ -24,7 +24,7 @@ router = APIRouter(prefix="/locations/{location_id}", tags=["weather"])
 
 @router.get(
     "/weather/raw",
-    response_model=ResponseEnvelope,
+    response_model=ResponseEnvelope[RawWeatherViewSchema],
     summary="Get raw normalized weather",
     description=(
         "Provider-normalized daily weather readings for a location and inclusive date "
@@ -47,7 +47,7 @@ async def get_raw_weather(
     request_id: RequestIdDep,
     _api_key: ApiKeyDep,
     _rate_limit: RateLimitDep,
-) -> ResponseEnvelope:
+) -> ResponseEnvelope[RawWeatherViewSchema]:
     result = await use_case.execute(
         latitude=coordinates.latitude,
         longitude=coordinates.longitude,

@@ -14,7 +14,8 @@ from collections.abc import AsyncIterator
 from datetime import UTC, date, datetime
 from typing import Annotated
 
-from fastapi import Depends, Header, Path, Query, Request
+from fastapi import Depends, Path, Query, Request, Security
+from fastapi.security import APIKeyHeader
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.application.use_cases.generate_narrative import GenerateNarrative
@@ -107,11 +108,23 @@ NarrationServiceDep = Annotated[NarrationPort, Depends(get_narration_service_dep
 # Authentication (API Spec §3, §7.1)
 # --------------------------------------------------------------------------
 
+#: Publishes an `apiKey` security scheme in OpenAPI, which is what gives
+#: Swagger its Authorize button and marks each route as protected.
+#:
+#: `auto_error=False` is deliberate: FastAPI's own failure would be a bare
+#: `403 {"detail": ...}`, outside the response envelope. Returning `None`
+#: instead lets the checks below raise the documented `401`/`403` envelope
+#: errors, so runtime behaviour is exactly as before this scheme existed.
+api_key_scheme = APIKeyHeader(
+    name="X-API-Key",
+    auto_error=False,
+    description="Consumer API key. Operator endpoints require a key from `OPS_API_KEYS`.",
+)
 
-def require_api_key(
-    settings: SettingsDep,
-    x_api_key: Annotated[str | None, Header(alias="X-API-Key")] = None,
-) -> str:
+ApiKeyHeaderDep = Annotated[str | None, Security(api_key_scheme)]
+
+
+def require_api_key(settings: SettingsDep, x_api_key: ApiKeyHeaderDep = None) -> str:
     """Reject any request without a recognised consumer key (`401`)."""
     if not x_api_key or x_api_key not in settings.api_keys:
         raise AuthenticationFailedError("Missing or invalid API key.")
@@ -121,10 +134,7 @@ def require_api_key(
 ApiKeyDep = Annotated[str, Depends(require_api_key)]
 
 
-def require_ops_api_key(
-    settings: SettingsDep,
-    x_api_key: Annotated[str | None, Header(alias="X-API-Key")] = None,
-) -> str:
+def require_ops_api_key(settings: SettingsDep, x_api_key: ApiKeyHeaderDep = None) -> str:
     """Restrict operator-only routes to `OPS_API_KEYS` (`401` unknown, `403` not permitted)."""
     if not x_api_key:
         raise AuthenticationFailedError("Missing or invalid API key.")

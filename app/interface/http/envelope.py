@@ -6,16 +6,19 @@ carries provider identity (API Spec §9.12).
 """
 
 from datetime import UTC, datetime
-from typing import Any
+from typing import TypeVar
 
 from app.interface.http.schemas.common import (
     CacheStatus,
     ErrorCode,
     ErrorDetailSchema,
+    ErrorEnvelope,
     ErrorSchema,
     MetadataSchema,
     ResponseEnvelope,
 )
+
+PayloadT = TypeVar("PayloadT")
 
 
 def build_metadata(
@@ -36,15 +39,20 @@ def build_metadata(
 
 
 def success_envelope(
-    data: Any,
+    data: PayloadT,
     *,
     request_id: str,
     cache_status: CacheStatus | None = None,
     rule_config_version: str | None = None,
     degraded: bool | None = None,
-) -> ResponseEnvelope:
-    """A `2xx` envelope. Degraded success is still `success: true` (API Spec §6)."""
-    return ResponseEnvelope(
+) -> ResponseEnvelope[PayloadT]:
+    """A `2xx` envelope. Degraded success is still `success: true` (API Spec §6).
+
+    The payload type flows through to the return type, so each route's
+    declared `ResponseEnvelope[...]` is checked against what it actually
+    passes here.
+    """
+    return ResponseEnvelope[PayloadT](
         success=True,
         data=data,
         metadata=build_metadata(
@@ -63,9 +71,9 @@ def error_envelope(
     message: str,
     request_id: str,
     details: list[ErrorDetailSchema] | None = None,
-) -> ResponseEnvelope:
+) -> ErrorEnvelope:
     """A failure envelope: `data` is null and the error object carries the code."""
-    return ResponseEnvelope(
+    return ErrorEnvelope(
         success=False,
         data=None,
         metadata=build_metadata(request_id=request_id),

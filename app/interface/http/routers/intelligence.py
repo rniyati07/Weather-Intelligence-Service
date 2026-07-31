@@ -38,7 +38,7 @@ _ERROR_RESPONSES: dict[int | str, dict[str, str]] = {
 
 @router.get(
     "/intelligence",
-    response_model=ResponseEnvelope,
+    response_model=ResponseEnvelope[WeatherIntelligenceSchema],
     summary="Get weather intelligence",
     description=(
         "Full deterministic weather intelligence — per-day risk, activity suitability, "
@@ -54,7 +54,7 @@ async def get_intelligence(
     request_id: RequestIdDep,
     _api_key: ApiKeyDep,
     _rate_limit: RateLimitDep,
-) -> ResponseEnvelope:
+) -> ResponseEnvelope[WeatherIntelligenceSchema]:
     result = await use_case.execute(
         latitude=coordinates.latitude,
         longitude=coordinates.longitude,
@@ -72,7 +72,7 @@ async def get_intelligence(
 
 @router.get(
     "/intelligence/best-days",
-    response_model=ResponseEnvelope,
+    response_model=ResponseEnvelope[BestDaysViewSchema],
     summary="Get best and worst days",
     description=(
         "Trip-level ranking view: the best and worst days to travel plus the overall "
@@ -87,7 +87,7 @@ async def get_best_days(
     request_id: RequestIdDep,
     _api_key: ApiKeyDep,
     _rate_limit: RateLimitDep,
-) -> ResponseEnvelope:
+) -> ResponseEnvelope[BestDaysViewSchema]:
     result = await use_case.execute(
         latitude=coordinates.latitude,
         longitude=coordinates.longitude,
@@ -105,7 +105,7 @@ async def get_best_days(
 
 @router.get(
     "/intelligence/packing",
-    response_model=ResponseEnvelope,
+    response_model=ResponseEnvelope[PackingViewSchema],
     summary="Get packing recommendations",
     description=(
         "Aggregated, deduplicated packing list for the whole trip, in a stable "
@@ -120,7 +120,7 @@ async def get_packing(
     request_id: RequestIdDep,
     _api_key: ApiKeyDep,
     _rate_limit: RateLimitDep,
-) -> ResponseEnvelope:
+) -> ResponseEnvelope[PackingViewSchema]:
     result = await use_case.execute(
         latitude=coordinates.latitude,
         longitude=coordinates.longitude,
