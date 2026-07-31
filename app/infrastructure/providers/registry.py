@@ -8,7 +8,7 @@ never leaves this module except into logs, the health snapshot, and (via
 
 import logging
 from collections.abc import Iterator
-from datetime import date
+from datetime import UTC, date, datetime
 from functools import lru_cache
 
 import httpx
@@ -16,6 +16,7 @@ import httpx
 from app.domain.ports.provider_registry import (
     AllProvidersFailedError,
     FetchResult,
+    ProviderHealthEntry,
     ProviderRegistryPort,
 )
 from app.domain.ports.weather_provider import DataClass, WeatherProvider
@@ -49,6 +50,9 @@ class ProviderRegistry(ProviderRegistryPort):
         }
         self._health = health
         self._client = client
+        # Reported as `lastCheckedAt` for a provider not yet called, so the
+        # operator endpoint never implies a health check that never ran.
+        self._started_at = datetime.now(UTC)
 
     def _priority_list(self, data_class: DataClass) -> list[str]:
         # Only names actually registered *under this data class* survive —
@@ -121,6 +125,26 @@ class ProviderRegistry(ProviderRegistryPort):
                 self._health.record_success(provider.name)
 
         return {name: record.status for name, record in self._health.snapshot().items()}
+
+    def health_snapshot(self) -> list[ProviderHealthEntry]:
+        """Cached health for every registered provider, as plain domain records.
+
+        A provider with no record yet has not been called since startup;
+        `HealthTracker.status()` reports that as available, and its
+        `lastCheckedAt` is the process start time rather than a fabricated
+        "now" that would imply a check that never happened.
+        """
+        records = self._health.snapshot()
+        return [
+            ProviderHealthEntry(
+                provider=name,
+                status=self._health.status(name).value,
+                last_checked_at=(
+                    records[name].checked_at if name in records else self._started_at
+                ),
+            )
+            for name in sorted(self._providers_by_name)
+        ]
 
     async def aclose(self) -> None:
         """Close the shared HTTP client every adapter was constructed with."""

@@ -11,7 +11,7 @@ crosses this boundary into anything an API consumer sees — only into logs,
 from abc import ABC, abstractmethod
 from collections.abc import Iterator
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
 
 from app.domain.entities.weather import NormalizedReading
 from app.domain.ports.weather_provider import DataClass, WeatherProvider
@@ -23,6 +23,21 @@ class FetchResult:
 
     readings: list[NormalizedReading]
     used_fallback: bool
+
+
+@dataclass(frozen=True, slots=True)
+class ProviderHealthEntry:
+    """One provider's operational state (API Spec §9.11).
+
+    Crosses the port as a plain domain record so the `/providers/health` use
+    case never imports the infrastructure health tracker. This is the single
+    documented exception to provider anonymity — the operator endpoint names
+    providers by design (API Spec §8.6).
+    """
+
+    provider: str
+    status: str
+    last_checked_at: datetime
 
 
 class AllProvidersFailedError(Exception):
@@ -58,4 +73,12 @@ class ProviderRegistryPort(ABC):
         """Try providers for `data_class` in priority order until one succeeds.
 
         Raises `AllProvidersFailedError` if the chain is exhausted.
+        """
+
+    @abstractmethod
+    def health_snapshot(self) -> list[ProviderHealthEntry]:
+        """Current TTL-bounded health for every registered provider.
+
+        Reads cached outcomes only — never issues a provider call — so the
+        operator endpoint (API Spec §8.6) generates no upstream traffic.
         """
