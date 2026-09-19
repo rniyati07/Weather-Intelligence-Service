@@ -8,7 +8,13 @@ import httpx
 import pytest
 import respx
 
-from app.infrastructure.providers.base import ProviderError, ProviderTimeoutError, call_with_retry
+from app.infrastructure.providers.base import (
+    USER_AGENT,
+    ProviderError,
+    ProviderTimeoutError,
+    build_http_client,
+    call_with_retry,
+)
 
 _URL = "https://example-provider.test/data"
 
@@ -88,3 +94,28 @@ class TestCallWithRetry:
                 await call_with_retry(request, provider="test", attempts=2, backoff_seconds=0.01)
 
         assert route.call_count == 3
+
+
+class TestUserAgent:
+    """Every outbound provider call must identify the client.
+
+    Overpass rejects httpx's default `python-httpx/...` agent with a bare
+    `406 Not Acceptable`, which surfaced as "this trip has no attractions"
+    on every chat turn rather than as an error — so the header is load-
+    bearing, not decoration.
+    """
+
+    def test_client_sends_an_identifying_user_agent(self) -> None:
+        client = build_http_client(5.0)
+
+        assert client.headers["user-agent"] == USER_AGENT
+        assert "httpx" not in client.headers["user-agent"].lower()
+
+    @respx.mock
+    async def test_user_agent_reaches_the_provider(self) -> None:
+        route = respx.get(_URL).mock(return_value=httpx.Response(200, json={"ok": True}))
+
+        client = build_http_client(5.0)
+        await client.get(_URL)
+
+        assert route.calls.last.request.headers["user-agent"] == USER_AGENT

@@ -45,6 +45,24 @@ class TestSuccess:
         assert sent_body["model"] == "test-model"
         assert sent_body["max_tokens"] == 400
 
+    @respx.mock
+    async def test_json_mode_sets_response_format(self) -> None:
+        route = respx.post(_URL).mock(
+            return_value=httpx.Response(200, json={"choices": [{"message": {"content": "{}"}}]})
+        )
+        await _client().complete(system_prompt="sys", user_content="go", json_mode=True)
+        sent_body = json.loads(route.calls.last.request.content)
+        assert sent_body["response_format"] == {"type": "json_object"}
+
+    @respx.mock
+    async def test_json_mode_defaults_to_off(self) -> None:
+        route = respx.post(_URL).mock(
+            return_value=httpx.Response(200, json={"choices": [{"message": {"content": "ok"}}]})
+        )
+        await _client().complete(system_prompt="sys", user_content="go")
+        sent_body = json.loads(route.calls.last.request.content)
+        assert "response_format" not in sent_body
+
 
 class TestRetryBehavior:
     @respx.mock

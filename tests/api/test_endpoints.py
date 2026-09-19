@@ -5,7 +5,7 @@ dependencies faked, so routing, auth, validation, serialisation and error
 mapping are all genuinely exercised.
 """
 
-from datetime import timedelta
+from datetime import UTC, date, datetime, timedelta
 
 import pytest
 from httpx import AsyncClient
@@ -21,6 +21,19 @@ from tests.api.conftest import (
     FakeRegistry,
     query,
 )
+
+
+def _utc_today() -> date:
+    """The date the *backend* considers today.
+
+    Validation compares against `datetime.now(UTC).date()`, so a test that
+    builds its ranges from the local `date.today()` disagrees with the server
+    for anyone east of UTC between local midnight and UTC midnight — a range
+    meant to be historical is still in-range to the server, and the test
+    fails on the clock rather than on the code.
+    """
+    return datetime.now(UTC).date()
+
 
 BASE = f"/api/v1/locations/{LOCATION_ID}"
 INTELLIGENCE = f"{BASE}/intelligence"
@@ -342,6 +355,78 @@ class TestValidation:
             headers=auth_headers,
         )
         assert response.status_code == 400
+
+    @pytest.mark.parametrize("endpoint", _ALL_GET_ENDPOINTS)
+    async def test_historical_only_range_is_400(
+        self, client: AsyncClient, auth_headers: dict[str, str], endpoint: str
+    ) -> None:
+        """§11: v1 forecast endpoints do not serve history.
+
+        Previously this returned `200` with an empty `dailyIntelligence`, which
+        reads to a client as "we looked and there is no weather" rather than
+        "this range is not servable".
+        """
+        past_end = _utc_today() - timedelta(days=1)
+        response = await client.get(
+            endpoint,
+            params={
+                "startDate": (past_end - timedelta(days=3)).isoformat(),
+                "endDate": past_end.isoformat(),
+            },
+            headers=auth_headers,
+        )
+
+        assert response.status_code == 400
+        payload = response.json()
+        assert payload["error"]["code"] == "VALIDATION_ERROR"
+        assert payload["error"]["details"][0]["field"] == "endDate"
+        assert payload["success"] is False
+        assert payload["data"] is None
+
+    async def test_historical_narrative_request_is_400(
+        self, client: AsyncClient, auth_headers: dict[str, str]
+    ) -> None:
+        past_end = _utc_today() - timedelta(days=1)
+        response = await client.post(
+            NARRATIVE,
+            json={
+                "startDate": (past_end - timedelta(days=2)).isoformat(),
+                "endDate": past_end.isoformat(),
+            },
+            headers=auth_headers,
+        )
+
+        assert response.status_code == 400
+        assert response.json()["error"]["code"] == "VALIDATION_ERROR"
+
+    async def test_range_ending_today_is_still_served(
+        self, client: AsyncClient, auth_headers: dict[str, str]
+    ) -> None:
+        """A mixed range is not historical-only, so §11 does not exclude it."""
+        today = _utc_today()
+        response = await client.get(
+            INTELLIGENCE,
+            params={
+                "startDate": (today - timedelta(days=2)).isoformat(),
+                "endDate": today.isoformat(),
+            },
+            headers=auth_headers,
+        )
+
+        assert response.status_code == 200
+        assert response.json()["success"] is True
+
+    async def test_future_range_is_unaffected(
+        self, client: AsyncClient, auth_headers: dict[str, str]
+    ) -> None:
+        """The regression guard: valid forward-looking ranges still succeed."""
+        response = await client.get(INTELLIGENCE, params=query(), headers=auth_headers)
+
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["success"] is True
+        assert payload["error"] is None
+        assert len(payload["data"]["dailyIntelligence"]) == 3
 
     async def test_malformed_date_is_400(
         self, client: AsyncClient, auth_headers: dict[str, str]

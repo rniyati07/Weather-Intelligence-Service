@@ -7,14 +7,17 @@ from typing import Any
 from fastapi import FastAPI
 from fastapi.openapi.utils import get_openapi
 
+from app.infrastructure.ai.llm_client import get_chat_llm_client
 from app.infrastructure.ai.narration_service import get_narration_service
 from app.infrastructure.config.settings import get_settings
+from app.infrastructure.geocoding.open_meteo import get_geocoding_service
 from app.infrastructure.observability.logging import configure_logging
 from app.infrastructure.observability.request_context import RequestContextMiddleware
 from app.infrastructure.persistence.session import get_database
+from app.infrastructure.places.overpass import get_places_service
 from app.infrastructure.providers.registry import get_provider_registry
 from app.interface.http.errors import register_exception_handlers
-from app.interface.http.routers import intelligence, narrative, providers, weather
+from app.interface.http.routers import conversation, intelligence, narrative, providers, weather
 
 #: Every documented endpoint lives under this prefix (API Spec §8).
 API_V1_PREFIX = "/api/v1"
@@ -47,6 +50,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     await get_database().dispose()
     await get_provider_registry().aclose()
     await get_narration_service().aclose()
+    await get_geocoding_service().aclose()
+    await get_chat_llm_client().aclose()
+    await get_places_service().aclose()
 
 
 def create_app() -> FastAPI:
@@ -63,6 +69,7 @@ def create_app() -> FastAPI:
     app.include_router(weather.router, prefix=API_V1_PREFIX)
     app.include_router(narrative.router, prefix=API_V1_PREFIX)
     app.include_router(providers.router, prefix=API_V1_PREFIX)
+    app.include_router(conversation.router, prefix=API_V1_PREFIX)
 
     @app.get(
         "/health",

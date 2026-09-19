@@ -1,0 +1,232 @@
+/* ===========================================================================
+ * DESIGN TOKENS — FDS §9
+ *
+ * Three layers, and the distinction matters:
+ *
+ *   1. PRIMITIVES  (--brand-500, --neutral-200, --red-400 …)
+ *      The raw palette. Theme-independent. NEVER referenced by a component.
+ *
+ *   2. SEMANTICS   (--background, --risk-high, --ai-surface …)
+ *      What a colour *means*. Redefined per theme. This is the only layer a
+ *      feature author should ever think about.
+ *
+ *   3. UTILITIES   (globals.css `@theme inline`)
+ *      Semantics exposed to Tailwind as `bg-background`, `text-risk-high`, …
+ *
+ * Adding light mode is therefore filling in layer 2 under `:root` — no
+ * component change, no utility-class change.
+ * ======================================================================== */
+
+:root {
+  /* =====================================================================
+   * LAYER 1 — PRIMITIVE PALETTE (FDS §9.2)
+   * ================================================================== */
+
+  /* Brand — cool teal-slate. The accent is a restrained mint rather than a
+   * saturated sky-blue: analytical, closer to an instrument panel than a
+   * consumer weather app. */
+  --brand-50: #eefbf7;
+  --brand-100: #d3f3ea;
+  --brand-400: #6ddbc0;
+  --brand-500: #14907a;
+  --brand-600: #0d6b5b;
+  --brand-700: #0a4a41;
+  --brand-800: #0d1f26;
+  --brand-900: #070f14;
+
+  /* Amber — travel and sun. The single warm note against a cool base. */
+  --amber-100: #fdf0df;
+  --amber-400: #f0a44e;
+  --amber-500: #e8871e;
+
+  /* Signal hues. The light-mode values are deliberately NOT pure red/amber/
+   * green: they are darkened for AA text contrast on white and chosen to stay
+   * separable under deuteranopia and protanopia. The -dark variants are
+   * lightened ~15% for contrast on dark surfaces (FDS §9.2). */
+  --green-600: #0f7b5f;
+  --green-400: #34d399;
+  --green-tint-light: #e6f4ef;
+  --green-tint-dark: #0c2b23;
+
+  --gold-700: #a76a00;
+  --gold-400: #f0b429;
+  --gold-tint-light: #fbf0dc;
+  --gold-tint-dark: #33260a;
+
+  --red-700: #b3261e;
+  --red-400: #f87171;
+  --red-tint-light: #fbe9e7;
+  --red-tint-dark: #331414;
+
+  /* Neutrals */
+  --neutral-0: #ffffff;
+  --neutral-50: #f8fafc;
+  --neutral-100: #f1f5f9;
+  --neutral-200: #e2e8f0;
+  --neutral-300: #cbd5e1;
+  --neutral-400: #94a3b8;
+  --neutral-600: #475569;
+  --neutral-800: #1e293b;
+  --neutral-900: #0f172a;
+
+  /* Violet — reserved exclusively for AI-generated surfaces, so users can tell
+   * generated text from computed data *without reading the label*. */
+  --violet-500: #6d4aff;
+  --violet-400: #a78bfa;
+  --violet-tint-light: #f5f3ff;
+  --violet-tint-dark: #191634;
+  --violet-line-light: #ddd6fe;
+  --violet-line-dark: #362f63;
+
+  /* =====================================================================
+   * LAYER 2 — SEMANTIC TOKENS · LIGHT THEME
+   * Dark is what ships (see `.dark`), but light is kept complete and in sync
+   * so switching is a class toggle rather than a project.
+   * ================================================================== */
+
+  --background: var(--neutral-50);
+  --foreground: var(--neutral-800);
+  --heading: var(--neutral-900);
+  --muted: var(--neutral-100);
+  --muted-foreground: var(--neutral-600);
+  --subtle-foreground: var(--neutral-400);
+
+  --surface: var(--neutral-0);
+  --surface-raised: var(--neutral-0);
+  --surface-sunken: var(--neutral-100);
+  --overlay: rgb(15 23 42 / 0.4);
+
+  --border-subtle: var(--neutral-200);
+  --border-strong: var(--neutral-400);
+  --input: var(--neutral-200);
+  --ring: var(--brand-500);
+
+  --primary: var(--brand-500);
+  --primary-hover: var(--brand-600);
+  --primary-active: var(--brand-700);
+  --primary-foreground: var(--neutral-0);
+  --primary-subtle: var(--brand-50);
+
+  --accent: var(--amber-500);
+  --accent-hover: var(--amber-400);
+  --accent-foreground: var(--brand-900);
+  --accent-subtle: var(--amber-100);
+
+  --secondary: var(--neutral-100);
+  --secondary-foreground: var(--neutral-800);
+
+  /* Risk. `advisory` and `provider status` are aliases of these three, not new
+   * hues — one meaning, one colour (FDS §8.7). `unknown` exists because enums
+   * are open: an unrecognised value renders neutral, never crashes (§12). */
+  --risk-low: var(--green-600);
+  --risk-low-surface: var(--green-tint-light);
+  --risk-moderate: var(--gold-700);
+  --risk-moderate-surface: var(--gold-tint-light);
+  --risk-high: var(--red-700);
+  --risk-high-surface: var(--red-tint-light);
+  --risk-unknown: var(--neutral-600);
+  --risk-unknown-surface: var(--neutral-100);
+
+  --destructive: var(--red-700);
+  --destructive-foreground: var(--neutral-0);
+
+  --ai-surface: var(--violet-tint-light);
+  --ai-border: var(--violet-line-light);
+  --ai-accent: var(--violet-500);
+  --ai-foreground: var(--neutral-800);
+
+  /* Elevation (FDS §9.6) — soft and low-spread: premium, not heavy. */
+  --elevation-xs: 0 1px 2px rgb(15 23 42 / 0.04);
+  --elevation-sm: 0 2px 8px rgb(15 23 42 / 0.06);
+  --elevation-md: 0 4px 16px rgb(15 23 42 / 0.08);
+  --elevation-lg: 0 12px 32px rgb(15 23 42 / 0.12);
+  --elevation-focus: 0 0 0 3px rgb(47 85 151 / 0.35);
+
+  color-scheme: light;
+}
+
+/* ===========================================================================
+ * LAYER 2 — SEMANTIC TOKENS · DARK THEME (the shipping default)
+ * ======================================================================== */
+
+.dark {
+  --background: var(--brand-900);
+  --foreground: #b4c6cc;
+  --heading: var(--neutral-0);
+  --muted: #10202a;
+  --muted-foreground: #8ba3ad;
+  --subtle-foreground: #627a85;
+
+  --surface: #0b1b22;
+  --surface-raised: #102630;
+  --surface-sunken: #050b0f;
+  --overlay: rgb(2 8 11 / 0.66);
+
+  --border-subtle: #1a3039;
+  --border-strong: #294853;
+  --input: #1a3039;
+  --ring: var(--brand-400);
+
+  --primary: var(--brand-400);
+  --primary-hover: #8ee6cf;
+  --primary-active: #a5eeda;
+  --primary-foreground: var(--brand-900);
+  --primary-subtle: #0f2b2a;
+
+  --accent: var(--amber-500);
+  --accent-hover: var(--amber-400);
+  --accent-foreground: var(--brand-900);
+  --accent-subtle: #2b1e0c;
+
+  --secondary: #16323c;
+  --secondary-foreground: #cfe2e7;
+
+  --risk-low: var(--green-400);
+  --risk-low-surface: #0c2b23;
+  --risk-moderate: var(--gold-400);
+  --risk-moderate-surface: #2e2410;
+  --risk-high: var(--red-400);
+  --risk-high-surface: #2e1618;
+  --risk-unknown: #8ba3ad;
+  --risk-unknown-surface: #10202a;
+
+  --destructive: var(--red-400);
+  --destructive-foreground: var(--brand-900);
+
+  /* The assistant no longer gets a tinted container — a reply reads as
+   * primary text, and only the small avatar carries the AI cue. These stay
+   * defined for that avatar and for the dashboard's AI Explanation card. */
+  --ai-surface: #131f33;
+  --ai-border: #253253;
+  --ai-accent: #9db8f5;
+  --ai-foreground: #b4c6cc;
+
+  /* A shadow tuned for light surfaces reads as nothing on a dark one, so these
+   * are deepened rather than reused. */
+  --elevation-xs: 0 1px 2px rgb(0 0 0 / 0.3);
+  --elevation-sm: 0 2px 8px rgb(0 0 0 / 0.35);
+  --elevation-md: 0 4px 16px rgb(0 0 0 / 0.45);
+  --elevation-lg: 0 12px 32px rgb(0 0 0 / 0.55);
+  --elevation-focus: 0 0 0 3px rgb(91 127 191 / 0.45);
+
+  color-scheme: dark;
+}
+
+/* ===========================================================================
+ * MOTION (FDS §11.1)
+ * Plain custom properties rather than Tailwind theme tokens, because the
+ * primary consumer is Framer Motion in TypeScript (`src/lib/animations.ts`),
+ * which reads the same numbers from `src/constants/motion.ts`. Nothing here
+ * exceeds 600ms: motion clarifies relationships, it never performs.
+ * ======================================================================== */
+
+:root {
+  --motion-instant: 100ms;
+  --motion-fast: 150ms;
+  --motion-base: 250ms;
+  --motion-slow: 400ms;
+  --motion-count: 600ms;
+
+  --motion-ease-out: cubic-bezier(0, 0, 0.2, 1);
+  --motion-ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+}

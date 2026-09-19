@@ -10,7 +10,7 @@ Best-days and packing are *projections* of this same result (API Spec
 """
 
 from dataclasses import dataclass
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 
 from app.application.use_cases.load_readings import CACHE_HIT, WeatherReadingsLoader
 from app.domain.entities.persistence import DailyIntelligenceRecord
@@ -44,10 +44,21 @@ class GetWeatherIntelligence:
         loader: WeatherReadingsLoader,
         repository: WeatherRepository,
         rule_config: RuleConfig,
+        intelligence_ttl_seconds: int = 0,
     ) -> None:
         self._loader = loader
         self._repository = repository
         self._rule_config = rule_config
+        # 0 disables the freshness guard below rather than treating every row
+        # as fresh forever — matches "unconfigured means off", not "always".
+        self._intelligence_ttl_seconds = intelligence_ttl_seconds
+
+    @property
+    def rule_config_version(self) -> str:
+        """Exposed for `CachedIntelligenceUseCase`'s cache key — the rule
+        version isn't known to a caller until after a call completes
+        otherwise, and a cache key must be computable before that."""
+        return self._rule_config.version
 
     async def execute(
         self, *, latitude: float, longitude: float, start: date, end: date, name: str | None = None
@@ -86,9 +97,37 @@ class GetWeatherIntelligence:
     async def _persist_intelligence(
         self, location_id: int, intelligence: WeatherIntelligence
     ) -> None:
-        """Store computed rows stamped with the rule version behind them."""
+        """Store computed rows stamped with the rule version behind them.
+
+        Guarded by `get_fresh_intelligence` (previously dormant — wired here
+        per the approved freshness decision): a day whose row is already
+        fresh, for this exact rule version, is skipped rather than
+        re-inserted. Full reconstruction of `WeatherIntelligence` straight
+        from stored rows was evaluated and rejected — `DailyIntelligenceRecord`
+        does not persist the daily weather summary (temps, precipitation,
+        condition), only the computed risk/activity/packing fields, so there
+        is nothing to hydrate `DailySummary` from without a schema change.
+        Rule evaluation itself is pure, in-process, and negligible cost; the
+        actual problem this fixes is unbounded duplicate-row growth on every
+        turn that touches any day in an already-fresh range, not recompute
+        latency.
+        """
+        already_fresh_dates: set[date] = set()
+        if self._intelligence_ttl_seconds > 0 and intelligence.daily_intelligence:
+            fresh_since = datetime.now(UTC) - timedelta(seconds=self._intelligence_ttl_seconds)
+            existing = await self._repository.get_fresh_intelligence(
+                location_id=location_id,
+                start_date=intelligence.period.start_date,
+                end_date=intelligence.period.end_date,
+                rule_config_version=intelligence.rule_config_version,
+                fresh_since=fresh_since,
+            )
+            already_fresh_dates = {row.date for row in existing}
+
         generated_at = datetime.now(UTC)
         for day in intelligence.daily_intelligence:
+            if day.date in already_fresh_dates:
+                continue
             await self._repository.save_intelligence(
                 DailyIntelligenceRecord(
                     location_id=location_id,

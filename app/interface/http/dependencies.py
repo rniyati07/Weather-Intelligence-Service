@@ -12,25 +12,49 @@ import time
 from collections import defaultdict, deque
 from collections.abc import AsyncIterator
 from datetime import UTC, date, datetime
+from functools import lru_cache
 from typing import Annotated
 
 from fastapi import Depends, Path, Query, Request, Security
 from fastapi.security import APIKeyHeader
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.application.use_cases.cached_intelligence import (
+    CachedIntelligenceUseCase,
+    CacheKey,
+    IntelligenceUseCase,
+)
+from app.application.use_cases.chat_orchestrator import ChatOrchestrator
 from app.application.use_cases.generate_narrative import GenerateNarrative
 from app.application.use_cases.get_provider_health import GetProviderHealth
 from app.application.use_cases.get_raw_weather import GetRawWeather
-from app.application.use_cases.get_weather_intelligence import GetWeatherIntelligence
+from app.application.use_cases.get_weather_intelligence import (
+    GetWeatherIntelligence,
+    IntelligenceResult,
+)
 from app.application.use_cases.load_readings import WeatherReadingsLoader
+from app.domain.ports.attractions import AttractionPort
+from app.domain.ports.conversation import ConversationRepository
+from app.domain.ports.geocoding import GeocodingPort
 from app.domain.ports.narration import NarrationPort
+from app.domain.ports.places import PlacesPort
 from app.domain.ports.provider_registry import ProviderRegistryPort
 from app.domain.ports.repository import WeatherRepository
+from app.domain.rules.date_range import InvalidDateRangeError
+from app.domain.rules.date_range import validate_date_range as domain_validate_date_range
+from app.infrastructure.ai.llm_client import LlmClient, get_chat_llm_client
 from app.infrastructure.ai.narration_service import get_narration_service
+from app.infrastructure.attractions.places_provider import PlacesBackedAttractionProvider
 from app.infrastructure.config.rule_config_loader import get_rule_config
 from app.infrastructure.config.settings import Settings, get_settings
-from app.infrastructure.persistence.repositories import SqlAlchemyWeatherRepository
+from app.infrastructure.geocoding.aliases import AliasedGeocoding
+from app.infrastructure.geocoding.open_meteo import get_geocoding_service
+from app.infrastructure.persistence.repositories import (
+    SqlAlchemyConversationRepository,
+    SqlAlchemyWeatherRepository,
+)
 from app.infrastructure.persistence.session import get_database
+from app.infrastructure.places.overpass import get_places_service
 from app.infrastructure.providers.registry import get_provider_registry
 from app.interface.http.errors import (
     AuthenticationFailedError,
@@ -102,6 +126,21 @@ def get_narration_service_dependency() -> NarrationPort:
 
 
 NarrationServiceDep = Annotated[NarrationPort, Depends(get_narration_service_dependency)]
+
+
+def get_geocoding_dependency() -> GeocodingPort:
+    """FastAPI dependency returning the geocoding adapter, curated-alias-wrapped.
+
+    `AliasedGeocoding` checks a small known-destination table (currently:
+    Goa) before delegating to the real, process-wide cached adapter — see
+    its module docstring for why. The underlying singleton is unchanged and
+    still closed once, in `main.py`'s lifespan; the wrapper owns nothing of
+    its own to leak.
+    """
+    return AliasedGeocoding(get_geocoding_service())
+
+
+GeocodingDep = Annotated[GeocodingPort, Depends(get_geocoding_dependency)]
 
 
 # --------------------------------------------------------------------------
@@ -244,34 +283,43 @@ class DateRange:
         self.end = end
 
 
+#: HTTP-facing `issue` text per domain reason code — the only thing this
+#: layer adds on top of `domain.rules.date_range`; the rule itself (which
+#: ranges get rejected) lives there, once.
+_ISSUE_TEXT: dict[str, str] = {
+    "end_before_start": "endDate is before startDate",
+    "historical_range": "endDate is before the current date",
+}
+
+
 def validate_date_range(start: date, end: date, settings: Settings) -> DateRange:
-    """Apply the §11 cross-field date rules shared by every endpoint."""
-    if end < start:
-        raise ValidationFailedError(
-            "endDate must be on or after startDate.",
-            details=[ErrorDetailSchema(field="endDate", issue="endDate is before startDate")],
-        )
+    """Apply the §11 cross-field date rules shared by every endpoint.
 
-    span_days = (end - start).days + 1
-    horizon = settings.max_forecast_horizon_days
-    if span_days > horizon:
-        raise ValidationFailedError(
-            f"The requested range exceeds the maximum of {horizon} days.",
-            details=[
-                ErrorDetailSchema(field="endDate", issue=f"range spans {span_days} days")
-            ],
+    Thin HTTP adapter over `domain.rules.date_range.validate_date_range` —
+    translates `InvalidDateRangeError` into the documented `ValidationFailedError`
+    envelope shape. `ChatOrchestrator` calls the same domain function directly
+    for the same rules, without importing anything from this module (`app.interface`
+    depends on `app.application`, never the reverse).
+    """
+    try:
+        validated = domain_validate_date_range(
+            start,
+            end,
+            max_horizon_days=settings.max_forecast_horizon_days,
+            today=datetime.now(UTC).date(),
         )
-
-    days_ahead = (end - datetime.now(UTC).date()).days
-    if days_ahead > horizon:
+    except InvalidDateRangeError as exc:
+        if exc.reason == "span_exceeds_horizon":
+            issue = f"range spans {exc.span_days} days"
+        elif exc.reason == "beyond_horizon":
+            issue = f"{exc.days_ahead} days beyond today"
+        else:
+            issue = _ISSUE_TEXT[exc.reason]
         raise ValidationFailedError(
-            f"endDate is beyond the supported {horizon}-day forecast window.",
-            details=[
-                ErrorDetailSchema(field="endDate", issue=f"{days_ahead} days beyond today")
-            ],
-        )
+            str(exc), details=[ErrorDetailSchema(field="endDate", issue=issue)]
+        ) from exc
 
-    return DateRange(start, end)
+    return DateRange(validated.start, validated.end)
 
 
 _StartDateQuery = Annotated[date, Query(alias="startDate", description="Inclusive start.")]
@@ -313,6 +361,7 @@ def get_weather_intelligence_use_case(
         loader=loader,
         repository=repository,
         rule_config=get_rule_config(settings.rule_config_version),
+        intelligence_ttl_seconds=settings.cache_ttl_intelligence_seconds,
     )
 
 
@@ -344,3 +393,122 @@ def get_provider_health_use_case(registry: ProviderRegistryDep) -> GetProviderHe
 
 
 ProviderHealthUseCaseDep = Annotated[GetProviderHealth, Depends(get_provider_health_use_case)]
+
+
+# --------------------------------------------------------------------------
+# Conversation & Chat dependencies
+# --------------------------------------------------------------------------
+
+
+def get_conversation_repository(session: DbSessionDep) -> ConversationRepository:
+    """FastAPI dependency returning a ConversationRepository bound to the request's session."""
+    return SqlAlchemyConversationRepository(session)
+
+
+ConversationRepositoryDep = Annotated[ConversationRepository, Depends(get_conversation_repository)]
+
+
+def get_chat_llm_client_dependency() -> LlmClient:
+    """FastAPI dependency returning the process-wide, cached chat `LlmClient`.
+
+    Cached like every other outbound client in this module (narration,
+    provider registry, geocoding) — a fresh `httpx.AsyncClient` per request
+    was the resource leak this replaces (stabilization issue 5).
+    """
+    return get_chat_llm_client()
+
+
+LlmClientDep = Annotated[LlmClient, Depends(get_chat_llm_client_dependency)]
+
+
+def get_places_dependency() -> PlacesPort:
+    """FastAPI dependency returning the process-wide, cached Overpass adapter."""
+    return get_places_service()
+
+
+PlacesDep = Annotated[PlacesPort, Depends(get_places_dependency)]
+
+
+def get_attraction_provider(places: PlacesDep) -> AttractionPort:
+    """FastAPI dependency returning an AttractionPort implementation.
+
+    Places-backed, not LLM-backed (stabilization issue 4): every attraction
+    this returns came from a real `PlacesPort.search` call. No client of its
+    own to leak — ranking is pure, in-process code.
+    """
+    return PlacesBackedAttractionProvider(places)
+
+
+AttractionProviderDep = Annotated[AttractionPort, Depends(get_attraction_provider)]
+
+
+@lru_cache
+def get_chat_intelligence_cache_store() -> dict[CacheKey, tuple[float, IntelligenceResult]]:
+    """The process-wide dict backing `CachedIntelligenceUseCase` for chat.
+
+    `@lru_cache` on a zero-arg function is this codebase's existing idiom
+    for "one shared instance for the process" (`get_chat_llm_client`,
+    `get_geocoding_service`, ...) — reused here for a plain dict rather than
+    a client, so the DI-per-request `CachedIntelligenceUseCase` instances
+    all read and write the same backing store.
+    """
+    return {}
+
+
+def reset_chat_intelligence_cache() -> None:
+    """Clear the chat intelligence cache. Test-support only.
+
+    Mirrors `reset_rate_limiter()`: the backing store is `@lru_cache`'d at
+    process scope precisely so it survives across requests, which means it
+    also survives across test functions in the same pytest process unless
+    explicitly cleared — a test asserting a fresh fake use case was called
+    would otherwise silently get a previous test's cached result instead.
+    """
+    get_chat_intelligence_cache_store().clear()
+
+
+def get_chat_intelligence_use_case(
+    intelligence: WeatherIntelligenceUseCaseDep, settings: SettingsDep
+) -> IntelligenceUseCase:
+    """FastAPI dependency returning a chat-only cached wrapper.
+
+    REST endpoints use `WeatherIntelligenceUseCaseDep` directly and never see
+    this — see `cached_intelligence.py` for why chat specifically benefits
+    and REST doesn't.
+    """
+    return CachedIntelligenceUseCase(
+        intelligence,
+        ttl_seconds=settings.cache_ttl_provider_seconds,
+        store=get_chat_intelligence_cache_store(),
+    )
+
+
+ChatIntelligenceUseCaseDep = Annotated[
+    IntelligenceUseCase, Depends(get_chat_intelligence_use_case)
+]
+
+
+def get_chat_orchestrator(
+    conversation_repo: ConversationRepositoryDep,
+    geocoding: GeocodingDep,
+    intelligence: ChatIntelligenceUseCaseDep,
+    attraction_provider: AttractionProviderDep,
+    llm_client: LlmClientDep,
+    settings: SettingsDep,
+) -> ChatOrchestrator:
+    """FastAPI dependency returning a fully-wired ChatOrchestrator.
+
+    No `NarrationServiceDep` — see `ChatOrchestrator.__init__` for why that
+    dependency was removed rather than wired (stabilization issue 6).
+    """
+    return ChatOrchestrator(
+        conversation_repo=conversation_repo,
+        geocoding=geocoding,
+        intelligence_use_case=intelligence,
+        max_forecast_horizon_days=settings.max_forecast_horizon_days,
+        attraction_provider=attraction_provider,
+        llm_client=llm_client,
+    )
+
+
+ChatOrchestratorDep = Annotated[ChatOrchestrator, Depends(get_chat_orchestrator)]

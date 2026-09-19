@@ -67,7 +67,13 @@ class Settings(BaseSettings):
     db_max_overflow: int = Field(default=5, ge=0)
 
     # ---- Cache ----
-    redis_url: RedisDsn
+    #: Optional, and currently unread by any code path. Caching is served by
+    #: the Postgres read-store (`WeatherReadingsLoader`) and the in-process
+    #: narration cache; Redis stays deferred per Bible ADR-002, which requires
+    #: a measured latency or multi-instance trigger before adopting it.
+    #: Required-but-unused would fail startup for a dependency nothing uses,
+    #: so it is optional until something actually reads it.
+    redis_url: RedisDsn | None = None
     cache_backend: Literal["redis", "memory"] = "redis"
     cache_ttl_provider_seconds: int = Field(default=3600, gt=0)
     cache_ttl_intelligence_seconds: int = Field(default=10800, gt=0)
@@ -138,10 +144,11 @@ def get_settings() -> Settings:
     """Return the process-wide `Settings` instance, constructed on first call.
 
     Fails fast with a clear, variable-naming error if a required environment
-    variable (`API_KEYS`, `DATABASE_URL`, `REDIS_URL`, `LLM_API_KEY`,
-    `LLM_MODEL`, `LLM_BASE_URL`) is missing. The three `LLM_*` variables are
-    required because AI narration is mandatory: there is no code path that
-    serves a narration request without a configured LLM.
+    variable (`API_KEYS`, `DATABASE_URL`, `LLM_API_KEY`, `LLM_MODEL`,
+    `LLM_BASE_URL`) is missing. The three `LLM_*` variables are required
+    because AI narration is mandatory: there is no code path that serves a
+    narration request without a configured LLM. `REDIS_URL` is deliberately
+    *not* in that list — see the field's own note.
     """
     try:
         return Settings()  # type: ignore[call-arg]

@@ -6,9 +6,13 @@ never on a 4xx), and a hard output-token cap. This is the only module that
 knows the LLM's wire format; `narration_service.py` never touches `httpx`.
 """
 
+from functools import lru_cache
 from typing import Any
 
 import httpx
+
+from app.infrastructure.config.settings import Settings, get_settings
+from app.infrastructure.providers.base import build_http_client
 
 
 class LlmClientError(Exception):
@@ -44,8 +48,24 @@ class LlmClient:
         self._timeout_seconds = timeout_seconds
         self._max_output_tokens = max_output_tokens
 
-    async def complete(self, *, system_prompt: str, user_content: str) -> str:
-        """Call the chat-completions endpoint once; retry once on a transient failure."""
+    async def complete(
+        self,
+        *,
+        system_prompt: str,
+        user_content: str,
+        json_mode: bool = False,
+    ) -> str:
+        """Call the chat-completions endpoint once; retry once on a transient failure.
+
+        `json_mode` sets the OpenAI-compatible `response_format:
+        {"type": "json_object"}` — Gemini's OpenAI-compat layer honours it,
+        and it materially improves reliability over prompt-only "return
+        JSON" instructions for the structured extraction call. It does not
+        replace the caller's own `json.loads` + validation: a model can
+        still return syntactically valid JSON that doesn't match the
+        requested shape, so the caller must keep treating the result as
+        untrusted input.
+        """
         payload: dict[str, Any] = {
             "model": self._model,
             "messages": [
@@ -54,6 +74,8 @@ class LlmClient:
             ],
             "max_tokens": self._max_output_tokens,
         }
+        if json_mode:
+            payload["response_format"] = {"type": "json_object"}
         headers = {"Authorization": f"Bearer {self._api_key}"}
 
         attempts_allowed = 2  # at most one retry
@@ -103,3 +125,38 @@ class LlmClient:
                 raise LlmClientError(f"LLM call failed: {exc}") from exc
 
         raise LlmClientError("LLM call failed: retry attempts exhausted")
+
+    async def aclose(self) -> None:
+        """Close the HTTP client this instance was constructed with."""
+        await self._client.aclose()
+
+
+def build_chat_llm_client(settings: Settings, http_client: httpx.AsyncClient) -> LlmClient:
+    """Wire an `LlmClient` for direct chat use (entity extraction, chat response).
+
+    Same settings, same class as `narration_service.build_narration_service` —
+    intentionally not a second implementation, just a second call site
+    against the one LLM transport this codebase has.
+    """
+    return LlmClient(
+        http_client,
+        base_url=settings.llm_base_url,
+        api_key=settings.llm_api_key,
+        model=settings.llm_model,
+        timeout_seconds=settings.llm_timeout_seconds,
+        max_output_tokens=settings.llm_max_output_tokens,
+    )
+
+
+@lru_cache
+def get_chat_llm_client() -> LlmClient:
+    """Return the process-wide chat `LlmClient`, constructed on first call.
+
+    Its own client and cache entry, separate from `NarrationService`'s: chat
+    extraction/response and narration are independent call sites with
+    independent failure modes, and sharing a pool would let one exhaust the
+    other exactly as the weather-vs-geocoding split does.
+    """
+    settings = get_settings()
+    http_client = build_http_client(settings.llm_timeout_seconds)
+    return build_chat_llm_client(settings, http_client)

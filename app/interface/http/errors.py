@@ -69,6 +69,17 @@ class RateLimitedError(ApiError):
         super().__init__(message)
 
 
+class NotFoundError(ApiError):
+    """404 — resource not found."""
+
+    status_code = status.HTTP_404_NOT_FOUND
+    code: ErrorCode = "NOT_FOUND"
+
+    def __init__(self, resource: str, identifier: str) -> None:
+        self.message = f"{resource} with identifier '{identifier}' not found."
+        super().__init__(self.message)
+
+
 def _request_id(request: Request) -> str:
     """The correlation id bound by `RequestContextMiddleware` (Phase 2)."""
     return getattr(request.state, "request_id", _UNKNOWN_REQUEST_ID)

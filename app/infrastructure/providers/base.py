@@ -33,9 +33,20 @@ def _is_transient(exc: BaseException) -> bool:
     return isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code >= 500
 
 
+#: Sent on every outbound provider call.
+#:
+#: Not cosmetic: Overpass rejects httpx's default `python-httpx/x.y.z` agent
+#: outright with `406 Not Acceptable`, so every places lookup failed and every
+#: chat turn silently came back with no attractions. Identifying the client is
+#: also what Overpass's own usage policy asks of API consumers, and the other
+#: providers accept it without complaint — so it belongs on the shared client
+#: rather than in one adapter.
+USER_AGENT = "WeatherIntelligenceService/1.0 (+https://github.com/weather-intelligence-service)"
+
+
 def build_http_client(timeout_seconds: float) -> httpx.AsyncClient:
     """Build the pooled client an adapter is constructed with (one per process, shared)."""
-    return httpx.AsyncClient(timeout=timeout_seconds)
+    return httpx.AsyncClient(timeout=timeout_seconds, headers={"User-Agent": USER_AGENT})
 
 
 async def call_with_retry(

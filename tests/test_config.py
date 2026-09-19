@@ -8,18 +8,21 @@ from app.infrastructure.config.settings import get_settings
 REQUIRED_ENV = {
     "API_KEYS": "dev_key_local",
     "DATABASE_URL": "postgresql+asyncpg://wis:wis@localhost:5432/wis",
-    "REDIS_URL": "redis://localhost:6379/0",
     "LLM_API_KEY": "test-llm-key",
     "LLM_MODEL": "test-model",
     "LLM_BASE_URL": "https://api.example-llm.test/v1",
 }
+
+#: Accepted but not required — nothing reads it yet (Bible ADR-002 defers
+#: Redis), so its absence must not fail startup.
+OPTIONAL_ENV = {"REDIS_URL": "redis://localhost:6379/0"}
 
 
 @pytest.fixture(autouse=True)
 def _hermetic_settings(monkeypatch, tmp_path):
     """Isolate every test from the developer's real `.env` and the settings cache."""
     monkeypatch.chdir(tmp_path)
-    for key in REQUIRED_ENV:
+    for key in (*REQUIRED_ENV, *OPTIONAL_ENV):
         monkeypatch.delenv(key, raising=False)
     get_settings.cache_clear()
     yield
@@ -75,7 +78,6 @@ class TestListParsing:
 class TestFailFast:
     def test_missing_single_required_variable_names_it(self, monkeypatch):
         monkeypatch.setenv("DATABASE_URL", REQUIRED_ENV["DATABASE_URL"])
-        monkeypatch.setenv("REDIS_URL", REQUIRED_ENV["REDIS_URL"])
 
         with pytest.raises(RuntimeError, match="API_KEYS"):
             get_settings()
@@ -87,13 +89,37 @@ class TestFailFast:
         message = str(exc_info.value)
         assert "API_KEYS" in message
         assert "DATABASE_URL" in message
-        assert "REDIS_URL" in message
         assert "LLM_API_KEY" in message
         assert "LLM_MODEL" in message
         assert "LLM_BASE_URL" in message
 
     def test_empty_api_keys_is_rejected(self, monkeypatch):
         _set_env(monkeypatch, API_KEYS="")
+        with pytest.raises(ValidationError):
+            get_settings()
+
+
+class TestOptionalRedis:
+    """Redis is configured-but-unread (ADR-002): absence must not fail startup."""
+
+    def test_startup_succeeds_without_redis_url(self, monkeypatch):
+        _set_env(monkeypatch)
+        settings = get_settings()
+        assert settings.redis_url is None
+
+    def test_missing_redis_url_is_not_reported_as_a_missing_variable(self, monkeypatch):
+        with pytest.raises(RuntimeError) as exc_info:
+            get_settings()
+        assert "REDIS_URL" not in str(exc_info.value)
+
+    def test_redis_url_is_still_parsed_when_supplied(self, monkeypatch):
+        _set_env(monkeypatch, **OPTIONAL_ENV)
+        settings = get_settings()
+        assert settings.redis_url is not None
+        assert settings.redis_url.host == "localhost"
+
+    def test_malformed_redis_url_is_still_rejected(self, monkeypatch):
+        _set_env(monkeypatch, REDIS_URL="not-a-redis-url")
         with pytest.raises(ValidationError):
             get_settings()
 

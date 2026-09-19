@@ -8,6 +8,7 @@ records in `domain/entities/persistence.py`. No ORM instance crosses the
 from datetime import date as date_
 from datetime import datetime
 from typing import Any
+from uuid import UUID as PyUUID
 
 from sqlalchemy import (
     Boolean,
@@ -20,7 +21,7 @@ from sqlalchemy import (
     String,
     UniqueConstraint,
 )
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 # Imported as `date_`, not `date`: `WeatherIntelligenceDailyModel` has a column
@@ -30,6 +31,55 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 class Base(DeclarativeBase):
     pass
+
+
+class ConversationModel(Base):
+    """A conversation aggregate with trip context.
+
+    Deliberately no ORM `relationship()` to `MessageModel` — matches this
+    file's existing pattern for every other one-to-many link (e.g.
+    `WeatherReadingRawModel`/`WeatherIntelligenceDailyModel` to `LocationModel`,
+    neither of which declares a relationship either). An ORM relationship's
+    default lazy-load strategy needs synchronous I/O, which an `AsyncSession`
+    cannot do implicitly — accessing it outside an explicit eager-load raises
+    `MissingGreenlet`. Repositories fetch messages via an explicit `select()`
+    instead, the same way every other child table in this codebase is read.
+    Cascade delete is still enforced at the database level by the FK's
+    `ondelete="CASCADE"` below — that is independent of any ORM relationship.
+    """
+
+    __tablename__ = "conversations"
+    __table_args__ = (
+        Index("ix_conversations_active_updated", "is_active", "updated_at"),
+    )
+
+    id: Mapped[PyUUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
+    trip_context: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+
+
+class MessageModel(Base):
+    """One message in a conversation."""
+
+    __tablename__ = "messages"
+    __table_args__ = (
+        Index("ix_messages_conversation_created", "conversation_id", "created_at"),
+    )
+
+    id: Mapped[PyUUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
+    conversation_id: Mapped[PyUUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("conversations.id", ondelete="CASCADE"), nullable=False
+    )
+    role: Mapped[str] = mapped_column(String(16), nullable=False)
+    content: Mapped[str] = mapped_column(String, nullable=False)
+    message_metadata: Mapped[dict[str, Any]] = mapped_column(
+        "metadata", JSONB, nullable=False, default=dict
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
 
 
 class LocationModel(Base):

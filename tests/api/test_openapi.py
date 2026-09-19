@@ -8,7 +8,7 @@ from typing import Any
 
 from httpx import AsyncClient
 
-#: The six documented endpoints (API Spec §8) plus the liveness probe.
+#: The documented endpoints (API Spec §8) plus the liveness probe and new conversation endpoints.
 _EXPECTED_PATHS = {
     ("get", "/api/v1/locations/{location_id}/intelligence"),
     ("get", "/api/v1/locations/{location_id}/intelligence/best-days"),
@@ -17,6 +17,11 @@ _EXPECTED_PATHS = {
     ("post", "/api/v1/locations/{location_id}/intelligence/narrative"),
     ("get", "/api/v1/providers/health"),
     ("get", "/health"),
+    # Conversation endpoints
+    ("post", "/api/v1/conversations"),
+    ("get", "/api/v1/conversations"),
+    ("get", "/api/v1/conversations/{conversation_id}"),
+    ("post", "/api/v1/conversations/chat"),
 }
 
 
@@ -86,12 +91,18 @@ class TestConcreteResponseSchemas:
             "/api/v1/locations/{location_id}/intelligence/narrative",
         ): "NarrativeViewSchema",
         ("get", "/api/v1/providers/health"): "ProviderHealthViewSchema",
+        ("post", "/api/v1/conversations"): "ConversationCreateResponse",
+        ("get", "/api/v1/conversations"): "ConversationListItem",
+        ("get", "/api/v1/conversations/{conversation_id}"): "ConversationSchema",
+        ("post", "/api/v1/conversations/chat"): "ChatResponse",
     }
 
     def test_every_endpoint_references_its_concrete_payload(self, app: Any) -> None:
         schema = app.openapi()
         for (method, path), payload in self._EXPECTED_PAYLOADS.items():
-            ref = schema["paths"][path][method]["responses"]["200"]["content"][
+            responses = schema["paths"][path][method]["responses"]
+            status = "201" if "201" in responses else "200"
+            ref = responses[status]["content"][
                 "application/json"
             ]["schema"]["$ref"]
             assert payload in ref, f"{method.upper()} {path} does not publish {payload}"
