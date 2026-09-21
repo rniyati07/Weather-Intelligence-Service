@@ -34,6 +34,16 @@ _GENOA = {
     "admin1": "Liguria",
     "timezone": "Europe/Rome",
 }
+_VARKALA = {
+    "id": 3,
+    "name": "Varkala",
+    "latitude": 8.7333,
+    "longitude": 76.7167,
+    "country": "India",
+    "country_code": "IN",
+    "admin1": "Kerala",
+    "timezone": "Asia/Kolkata",
+}
 
 
 @pytest.fixture
@@ -155,6 +165,93 @@ class TestNoMatch:
             route = respx.get(open_meteo._BASE_URL)
             assert await adapter.search("   ") == []
             assert not route.called
+
+
+class TestWordDroppingFallback:
+    """Live-observed regression: Open-Meteo returns zero results for the
+    unseparated phrase "varkala kerala" even though "varkala" alone matches
+    perfectly — confirmed directly against the real API. This is exactly
+    how a destination naturally gets typed/extracted in conversation
+    ("go to Varkala Kerala"), so it cannot be left to the caller to always
+    add a comma."""
+
+    @respx.mock
+    async def test_falls_back_to_a_shorter_query_when_the_full_phrase_has_no_match(
+        self, adapter: OpenMeteoGeocoding
+    ) -> None:
+        def _responder(request: httpx.Request) -> httpx.Response:
+            if request.url.params.get("name") == "varkala":
+                return httpx.Response(200, json={"results": [_VARKALA]})
+            return httpx.Response(200, json={"generationtime_ms": 0.1})
+
+        respx.get(open_meteo._BASE_URL).mock(side_effect=_responder)
+
+        places = await adapter.search("varkala kerala")
+
+        assert [place.name for place in places] == ["Varkala"]
+
+    @respx.mock
+    async def test_a_comma_separated_query_is_not_retried(
+        self, adapter: OpenMeteoGeocoding
+    ) -> None:
+        """A comma already separates place from region and Open-Meteo
+        handles that shape natively (confirmed live) — no extra request
+        should be made even when it comes back empty."""
+        route = respx.get(open_meteo._BASE_URL).mock(
+            return_value=httpx.Response(200, json={"generationtime_ms": 0.1})
+        )
+
+        assert await adapter.search("Varkala, Nowhereland") == []
+        assert route.call_count == 1
+
+    @respx.mock
+    async def test_trims_one_word_at_a_time_most_specific_first(
+        self, adapter: OpenMeteoGeocoding
+    ) -> None:
+        """"Fort Kochi Kerala" must try "Fort Kochi" before ever collapsing
+        to "Fort" — dropping straight to the first word risks matching an
+        unrelated place for a genuinely multi-word name."""
+        seen_names: list[str | None] = []
+
+        def _responder(request: httpx.Request) -> httpx.Response:
+            seen_names.append(request.url.params.get("name"))
+            return httpx.Response(200, json={"generationtime_ms": 0.1})
+
+        respx.get(open_meteo._BASE_URL).mock(side_effect=_responder)
+
+        await adapter.search("Fort Kochi Kerala")
+
+        assert seen_names == ["Fort Kochi Kerala", "Fort Kochi", "Fort"]
+
+    @respx.mock
+    async def test_no_fallback_for_a_single_word_query(
+        self, adapter: OpenMeteoGeocoding
+    ) -> None:
+        route = respx.get(open_meteo._BASE_URL).mock(
+            return_value=httpx.Response(200, json={"generationtime_ms": 0.1})
+        )
+
+        assert await adapter.search("zzzzzzzz") == []
+        assert route.call_count == 1
+
+    @respx.mock
+    async def test_a_legitimate_multi_word_name_never_gets_trimmed(
+        self, adapter: OpenMeteoGeocoding
+    ) -> None:
+        """"New York" must resolve on the first try — the fallback only
+        engages once the full phrase has already come back empty."""
+        new_york = {**_GOA_INDIA, "name": "New York", "country": "United States"}
+
+        def _responder(request: httpx.Request) -> httpx.Response:
+            if request.url.params.get("name") == "New York":
+                return httpx.Response(200, json={"results": [new_york]})
+            raise AssertionError("should not have retried a query that already matched")
+
+        respx.get(open_meteo._BASE_URL).mock(side_effect=_responder)
+
+        places = await adapter.search("New York")
+
+        assert [place.name for place in places] == ["New York"]
 
 
 class TestMalformedResults:

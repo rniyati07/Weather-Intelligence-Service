@@ -1,11 +1,13 @@
 """Thin HTTP client for a single LLM chat-completion call.
 
 No orchestration framework, no agent loop, no tool use (Bible ADR-006/011)
-— one request, at most one retry on a transient failure (timeout or 5xx;
-never on a 4xx), and a hard output-token cap. This is the only module that
-knows the LLM's wire format; `narration_service.py` never touches `httpx`.
+— one request, at most one retry on a transient failure (timeout, 5xx, or a
+429 rate limit; never on any other 4xx), and a hard output-token cap. This is
+the only module that knows the LLM's wire format; `narration_service.py`
+never touches `httpx`.
 """
 
+import asyncio
 from functools import lru_cache
 from typing import Any
 
@@ -13,6 +15,18 @@ import httpx
 
 from app.infrastructure.config.settings import Settings, get_settings
 from app.infrastructure.providers.base import build_http_client
+
+#: Fallback delay before the one retry on a 429, when the provider gives no
+#: `Retry-After` header. Live-observed: a short burst of chat turns (a user
+#: asking several follow-up questions in quick succession, each needing an
+#: extraction call and a narrative call) can trip Groq's per-minute rate
+#: limit; retrying instantly almost always hits the same wall again, so a
+#: brief wait is what actually gives the retry a chance to succeed.
+_DEFAULT_RATE_LIMIT_BACKOFF_SECONDS = 1.5
+#: Upper bound on how long a single request will wait on a provider-supplied
+#: `Retry-After`, so a misbehaving provider can't stall a chat turn for
+#: minutes.
+_MAX_RATE_LIMIT_BACKOFF_SECONDS = 5.0
 
 
 class LlmClientError(Exception):
@@ -24,7 +38,26 @@ class LlmTimeoutError(LlmClientError):
 
 
 def _is_transient(exc: httpx.HTTPStatusError) -> bool:
-    return exc.response.status_code >= 500
+    return exc.response.status_code >= 500 or exc.response.status_code == 429
+
+
+def _retry_after_seconds(response: httpx.Response) -> float:
+    """How long to wait before retrying a 429, from `Retry-After` if given.
+
+    The header is normally an integer count of seconds for a rate limit
+    (the HTTP-date form is for cache-style 503s, not something a rate
+    limiter sends) — parsed defensively since it's provider-controlled
+    input, with the default and a cap so a missing or unreasonable value
+    never turns into either no wait or an excessive one.
+    """
+    raw = response.headers.get("retry-after")
+    if raw is None:
+        return _DEFAULT_RATE_LIMIT_BACKOFF_SECONDS
+    try:
+        seconds = float(raw)
+    except ValueError:
+        return _DEFAULT_RATE_LIMIT_BACKOFF_SECONDS
+    return max(0.0, min(seconds, _MAX_RATE_LIMIT_BACKOFF_SECONDS))
 
 
 class LlmClient:
@@ -54,6 +87,7 @@ class LlmClient:
         system_prompt: str,
         user_content: str,
         json_mode: bool = False,
+        temperature: float | None = None,
     ) -> str:
         """Call the chat-completions endpoint once; retry once on a transient failure.
 
@@ -65,6 +99,13 @@ class LlmClient:
         still return syntactically valid JSON that doesn't match the
         requested shape, so the caller must keep treating the result as
         untrusted input.
+
+        `temperature`, left unset, uses the provider's own default — right
+        for narrative generation, which wants some natural variation.
+        Structured extraction is a different kind of task (read the message,
+        report what's there) where that same variation is pure risk: an
+        obvious, explicitly-stated destination or date can still be dropped
+        on an unlucky sampling draw. The caller passes a low value there.
         """
         payload: dict[str, Any] = {
             "model": self._model,
@@ -76,6 +117,8 @@ class LlmClient:
         }
         if json_mode:
             payload["response_format"] = {"type": "json_object"}
+        if temperature is not None:
+            payload["temperature"] = temperature
         headers = {"Authorization": f"Bearer {self._api_key}"}
 
         attempts_allowed = 2  # at most one retry
@@ -119,6 +162,8 @@ class LlmClient:
             except httpx.HTTPStatusError as exc:
                 if not _is_transient(exc) or is_last_attempt:
                     raise LlmClientError(f"LLM call failed: {exc}") from exc
+                if exc.response.status_code == 429:
+                    await asyncio.sleep(_retry_after_seconds(exc.response))
             except (httpx.HTTPError, KeyError, IndexError, TypeError, ValueError) as exc:
                 # Connection errors and malformed responses are never retried:
                 # a malformed response won't fix itself on a second attempt.

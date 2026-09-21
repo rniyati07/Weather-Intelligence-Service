@@ -1,7 +1,8 @@
 """Tests for `domain.engines.recommendation.best_worst.rank_days`.
 
-Ranking is (risk ascending, mean suitability descending, date ascending) --
-the date tie-breaker means the result never depends on input order.
+Ranking is (risk ascending, mean suitability descending, precipitation
+probability ascending, date ascending) -- the date tie-breaker means the
+result never depends on input order.
 """
 
 from datetime import date
@@ -16,13 +17,15 @@ from app.domain.entities.weather_intelligence import (
 )
 
 
-def _day(day: date, risk_level: str, scores: list[int]) -> DailyIntelligence:
+def _day(
+    day: date, risk_level: str, scores: list[int], *, precipitation_probability: float = 0.1
+) -> DailyIntelligence:
     return DailyIntelligence(
         date=day,
         summary=DailySummary(
             temp_min_c=20.0,
             temp_max_c=25.0,
-            precipitation_probability=0.1,
+            precipitation_probability=precipitation_probability,
             wind_speed_kph=10.0,
             condition=WeatherCondition.CLEAR,
         ),
@@ -60,6 +63,23 @@ class TestSuitabilityIsSecondary:
 
         assert best == [date(2026, 8, 2)]
         assert worst == [date(2026, 8, 1)]
+
+
+class TestPrecipitationIsTertiary:
+    def test_among_equal_risk_and_suitability_drier_day_wins(self) -> None:
+        """Live-observed regression: a 4-day trip where every day shared the
+        same risk level and the same mean suitability score (a rule-config
+        gap, not this function's concern) still needs a meaningful tie-break
+        — falling straight to date order picked day 1 as "best" even though
+        it had the highest rain chance of the trip."""
+        rainy = _day(date(2026, 10, 1), "moderate", [65], precipitation_probability=0.41)
+        drier = _day(date(2026, 10, 2), "moderate", [65], precipitation_probability=0.31)
+        driest = _day(date(2026, 10, 3), "moderate", [65], precipitation_probability=0.12)
+
+        best, worst = rank_days([rainy, drier, driest])
+
+        assert best == [date(2026, 10, 3)]
+        assert worst == [date(2026, 10, 1)]
 
 
 class TestDeterministicTieBreak:

@@ -7,7 +7,14 @@ import httpx
 import pytest
 import respx
 
-from app.infrastructure.ai.llm_client import LlmClient, LlmClientError, LlmTimeoutError
+from app.infrastructure.ai.llm_client import (
+    _DEFAULT_RATE_LIMIT_BACKOFF_SECONDS,
+    _MAX_RATE_LIMIT_BACKOFF_SECONDS,
+    LlmClient,
+    LlmClientError,
+    LlmTimeoutError,
+    _retry_after_seconds,
+)
 
 _BASE_URL = "https://api.example-llm.test/v1"
 _URL = f"{_BASE_URL}/chat/completions"
@@ -63,6 +70,26 @@ class TestSuccess:
         sent_body = json.loads(route.calls.last.request.content)
         assert "response_format" not in sent_body
 
+    @respx.mock
+    async def test_temperature_is_sent_when_given(self) -> None:
+        route = respx.post(_URL).mock(
+            return_value=httpx.Response(200, json={"choices": [{"message": {"content": "ok"}}]})
+        )
+        await _client().complete(system_prompt="sys", user_content="go", temperature=0.1)
+        sent_body = json.loads(route.calls.last.request.content)
+        assert sent_body["temperature"] == 0.1
+
+    @respx.mock
+    async def test_temperature_omitted_by_default(self) -> None:
+        """Left unset, the provider's own default temperature applies —
+        right for narrative generation, which wants natural variation."""
+        route = respx.post(_URL).mock(
+            return_value=httpx.Response(200, json={"choices": [{"message": {"content": "ok"}}]})
+        )
+        await _client().complete(system_prompt="sys", user_content="go")
+        sent_body = json.loads(route.calls.last.request.content)
+        assert "temperature" not in sent_body
+
 
 class TestRetryBehavior:
     @respx.mock
@@ -92,6 +119,64 @@ class TestRetryBehavior:
         with pytest.raises(LlmClientError):
             await _client().complete(system_prompt="sys", user_content="go")
         assert route.call_count == 1
+
+    @respx.mock
+    async def test_429_retries_once_then_raises(self) -> None:
+        """A rate limit is transient too — live-observed: a burst of chat
+        turns can trip Groq's per-minute limit, and treating 429 like any
+        other 4xx meant an instant, unnecessary fallback to the generic
+        template instead of giving the one retry a chance to land after the
+        window resets. `Retry-After: 0` keeps this test from actually
+        sleeping; the backoff duration itself is covered separately."""
+        route = respx.post(_URL).mock(
+            return_value=httpx.Response(429, headers={"Retry-After": "0"})
+        )
+        with pytest.raises(LlmClientError):
+            await _client().complete(system_prompt="sys", user_content="go")
+        assert route.call_count == 2  # 1 initial + 1 retry
+
+    @respx.mock
+    async def test_429_succeeds_on_retry(self) -> None:
+        route = respx.post(_URL).mock(
+            side_effect=[
+                httpx.Response(429, headers={"Retry-After": "0"}),
+                httpx.Response(200, json={"choices": [{"message": {"content": "ok now"}}]}),
+            ]
+        )
+        result = await _client().complete(system_prompt="sys", user_content="go")
+        assert result == "ok now"
+        assert route.call_count == 2
+
+    @respx.mock
+    async def test_other_4xx_still_does_not_retry(self) -> None:
+        route = respx.post(_URL).mock(return_value=httpx.Response(400, json={"error": "bad"}))
+        with pytest.raises(LlmClientError):
+            await _client().complete(system_prompt="sys", user_content="go")
+        assert route.call_count == 1
+
+
+class TestRetryAfterParsing:
+    """`_retry_after_seconds` in isolation — no network, no real sleep."""
+
+    def test_missing_header_uses_default(self) -> None:
+        response = httpx.Response(429)
+        assert _retry_after_seconds(response) == _DEFAULT_RATE_LIMIT_BACKOFF_SECONDS
+
+    def test_malformed_header_uses_default(self) -> None:
+        response = httpx.Response(429, headers={"Retry-After": "not-a-number"})
+        assert _retry_after_seconds(response) == _DEFAULT_RATE_LIMIT_BACKOFF_SECONDS
+
+    def test_valid_header_within_cap_is_used(self) -> None:
+        response = httpx.Response(429, headers={"Retry-After": "2"})
+        assert _retry_after_seconds(response) == 2.0
+
+    def test_header_above_cap_is_clamped(self) -> None:
+        response = httpx.Response(429, headers={"Retry-After": "120"})
+        assert _retry_after_seconds(response) == _MAX_RATE_LIMIT_BACKOFF_SECONDS
+
+    def test_negative_header_is_clamped_to_zero(self) -> None:
+        response = httpx.Response(429, headers={"Retry-After": "-5"})
+        assert _retry_after_seconds(response) == 0.0
 
 
 _GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai"

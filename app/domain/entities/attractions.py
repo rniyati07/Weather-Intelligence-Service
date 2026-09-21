@@ -33,6 +33,9 @@ class AttractionType(StrEnum):
     FOOD = "food"
     HIKING = "hiking"
     WATER_SPORTS = "water_sports"
+    HOTEL = "hotel"
+    GUEST_HOUSE = "guest_house"
+    SPORTS_FACILITY = "sports_facility"
 
 
 class WeatherSuitability(StrEnum):

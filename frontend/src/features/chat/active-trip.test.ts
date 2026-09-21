@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import type { ChatMessage, ConversationSummary, TripContextPayload } from '@/types'
-import { latestPlaces } from '@/utils/chat'
+import { latestPlaces, withLastResolvedDestination } from '@/utils/chat'
 import {
   isActiveTrip,
   rollingHistoryWindow,
@@ -143,6 +143,66 @@ describe('places for the active trip', () => {
   it('returns nothing rather than throwing when no turn has places', () => {
     expect(latestPlaces([assistant({})], key)).toEqual([])
     expect(latestPlaces([], key)).toEqual([])
+  })
+})
+
+/** A trip mid-disambiguation: the backend has cleared `destination` (never
+ * sets it to `undefined` — it omits the key, exactly as the wire payload
+ * would), while every other field the user had already established survives. */
+function tripPendingDisambiguation(
+  overrides: Partial<Omit<TripContextPayload, 'destination'>> = {},
+): TripContextPayload {
+  return { startDate: '2026-09-15', endDate: '2026-09-18', ...overrides }
+}
+
+describe('surviving a pending disambiguation (ISSUE-1)', () => {
+  it('leaves an already-resolved trip untouched', () => {
+    expect(withLastResolvedDestination(trip(), [])).toEqual(trip())
+  })
+
+  it('patches a cleared destination back in from the last turn that resolved one', () => {
+    const messages = [
+      assistant({ tripContext: trip() }),
+      // The backend clears `destination` to force disambiguation on a new,
+      // ambiguous mention — everything else about the trip survives.
+      assistant({
+        tripContext: tripPendingDisambiguation({ interests: ['photography'] }),
+      }),
+    ]
+
+    const patched = withLastResolvedDestination(
+      tripPendingDisambiguation({ interests: ['photography'] }),
+      messages,
+    )
+
+    // `tripContext` round-trips through `parseTripContext`, which normalizes
+    // the destination shape (adds e.g. `country: null` when absent from the
+    // raw payload) — so only the identifying fields are asserted here, not a
+    // byte-identical object.
+    expect(patched.destination?.name).toBe(GOA.name)
+    expect(patched.destination?.latitude).toBe(GOA.latitude)
+    expect(patched.destination?.longitude).toBe(GOA.longitude)
+    expect(patched.interests).toEqual(['photography'])
+    expect(isActiveTrip(patched, true)).toBe(true)
+  })
+
+  it('leaves a conversation with no prior resolved destination as no-active-trip', () => {
+    // A brand-new conversation whose very first mention is ambiguous must not
+    // be treated as an established trip — there is nothing to fall back to.
+    const messages = [assistant({ tripContext: tripPendingDisambiguation() })]
+
+    const patched = withLastResolvedDestination(tripPendingDisambiguation(), messages)
+
+    expect(patched.destination).toBeUndefined()
+    expect(isActiveTrip(patched, true)).toBe(false)
+  })
+
+  it('ignores turns with no tripContext at all, as a restored thread has', () => {
+    const messages = [assistant({ places: [] })]
+
+    expect(
+      withLastResolvedDestination(tripPendingDisambiguation(), messages).destination,
+    ).toBeUndefined()
   })
 })
 

@@ -54,9 +54,16 @@
       },
       "summary": {
         "condition": "thunderstorm",
+        "feels_like_max_c": null,
+        "feels_like_min_c": null,
+        "humidity": 0.9,
         "precipitation_probability": 0.9,
+        "sunrise": null,
+        "sunset": null,
         "temp_max_c": 36.0,
         "temp_min_c": 24.0,
+        "uv_index_max": null,
+        "wind_gust_kph": null,
         "wind_speed_kph": 45.0
       },
       "travel_advisory": "avoid"
@@ -84,9 +91,16 @@
       },
       "summary": {
         "condition": "clear",
+        "feels_like_max_c": null,
+        "feels_like_min_c": null,
+        "humidity": null,
         "precipitation_probability": 0.05,
+        "sunrise": null,
+        "sunset": null,
         "temp_max_c": 27.0,
         "temp_min_c": 20.0,
+        "uv_index_max": null,
+        "wind_gust_kph": null,
         "wind_speed_kph": 10.0
       },
       "travel_advisory": "proceed"

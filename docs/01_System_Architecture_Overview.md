@@ -1,5 +1,7 @@
 # Weather Intelligence Service — Project Bible
 
+> **Status note (added post-pivot, not part of the original Bible).** This document is pre-implementation and describes the originally scoped product: a deterministic weather-intelligence API, no chatbot, no attraction recommendation. The product has since pivoted to a conversational trip-planning assistant that includes both. For the current, accurate product description, see `docs/WEATHER_INTELLIGENCE_REBUILD_ARCHITECTURE.md`; for verified current behavior, see `docs/WEATHER_INTELLIGENCE_FULL_E2E_AUDIT.md`. Kept as a historical record of the original architectural reasoning, much of which (the deterministic/AI split, the layering) still holds — the *scope*, specifically, does not.
+
 **Document type:** Solution Architecture Document / Project Bible (single source of truth)
 **Subject:** Standalone, AI-augmented Weather Intelligence Service (internship module, TravelOS-inspired)
 **Status:** Pre-implementation. No code written. Every downstream artifact (Product Vision, PRD, TRD, SAD, API spec, DB design, UI/UX spec, sprint plan, roadmap, testing strategy, deployment guide, README, presentation, internship report) is a *view* onto this document, not written independently of it.

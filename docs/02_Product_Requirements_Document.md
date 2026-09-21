@@ -1,5 +1,7 @@
 # Weather Intelligence Service — Product Requirements Document (PRD)
 
+> **Status note (added post-pivot, not part of the original PRD).** This document describes the product's originally scoped MVP: a deterministic weather-intelligence API for a machine consumer ("TravelOS"), explicitly excluding a chatbot interface and attraction recommendation (§11). The product has since pivoted to a conversational trip-planning assistant that *does* both of those things — see `docs/WEATHER_INTELLIGENCE_REBUILD_ARCHITECTURE.md` for the current, accurate product description, and `docs/WEATHER_INTELLIGENCE_FULL_E2E_AUDIT.md` for a verified account of current system behavior. This PRD is kept as a historical record of the original scope decision, not as a description of what is currently built. §11's exclusions no longer hold; nothing else below has been re-verified against the pivot.
+
 ## 1. Document Information
 
 | Field | Value |

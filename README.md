@@ -12,7 +12,7 @@ Every score, risk level, and place shown in the UI is computed by a deterministi
 
 - Natural-language trip planning: destination, dates, interests, travel style, and pace extracted from free text
 - Deterministic weather intelligence: suitability score, risk level, confidence, best day, watch-out day, and day-by-day breakdown
-- Real place discovery matched to the trip's interests and weather
+- Real place discovery matched to the trip's interests and weather — landmarks, beaches, museums, restaurants and cafes, stays (hotels/guest houses/hostels), and sports facilities, all sourced from OpenStreetMap, never invented
 - Weather-derived packing recommendations
 - Multi-turn conversation with persistent trip context — follow-ups never require repeating known information
 - Persistent conversation history, restorable across sessions and browser refreshes
@@ -105,7 +105,7 @@ Configured via `.env` (backend) and `frontend/.env.local` (frontend). No secrets
 ## Testing
 
 ```bash
-pytest                  # backend — 527 tests
+pytest                  # backend — 529 tests (excludes tests/live by default)
 ruff check app tests    # lint
 mypy app                # type check
 lint-imports             # architecture boundary check
@@ -114,13 +114,14 @@ cd frontend
 npm test                # frontend unit tests (vitest)
 npm run typecheck
 npm run lint
+npm run format:check
 npm run build
 ```
 
-The backend suite is unit and integration coverage with external providers faked; a small number of integration tests require Docker (Testcontainers) and are skipped otherwise. Live-provider and full-browser verification has been performed manually against real Groq, weather, and Overpass endpoints — see `docs/WEATHER_INTELLIGENCE_FULL_E2E_AUDIT.md` for the most recent findings.
+The default backend suite is unit and integration coverage with external providers faked; a small number of integration tests require Docker (Testcontainers) and are skipped otherwise. `tests/live/` (`pytest -m live tests/live`, requires a real `.env`) is a separate, deliberately-excluded suite that hits the real Groq, Open-Meteo, Overpass, and OpenWeather endpoints — see `tests/live/README.md`. Both backend and frontend are gated in CI (`.github/workflows/ci.yml`).
 
 ## Known limitations
 
-- **Place discovery depends on a public Overpass endpoint**, which can rate-limit or time out under load; results for a given destination can vary between requests. This is an external reliability constraint, not an application defect.
-- **Weather fallback providers** (OpenWeather, WeatherAPI) are configured but not yet exercised in live production traffic — Open-Meteo is the primary path.
-- Full architectural detail and a forensic audit of current system behavior are documented separately in `docs/`.
+- **Place discovery depends on a public Overpass endpoint**, which can rate-limit or time out under load; results for a given destination can vary between requests. This is an external reliability constraint, not an application defect. (A second Overpass host once carried as a fallback was removed — it was measured unreachable and never rescued a single request.)
+- **`WEATHERAPI_KEY` is not configured** — WeatherAPI is the second (least-priority) forecast fallback; Open-Meteo (primary) and OpenWeather (first fallback) are both live-verified working.
+- Full architectural detail and a forensic audit of past system behavior are documented separately in `docs/` (`WEATHER_INTELLIGENCE_FULL_E2E_AUDIT.md`, kept as a historical record — not updated in place). Every issue from that audit's fix list has since been fixed and re-verified live, except Docker/deployment packaging (`docker-compose.yml` and `docker/Dockerfile` exist and are written to spec, but building/running them has not been verified — Docker Desktop was unavailable in the environment that did this work).

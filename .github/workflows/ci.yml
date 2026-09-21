@@ -5,8 +5,21 @@ on:
   pull_request:
 
 jobs:
-  test:
+  backend:
     runs-on: ubuntu-latest
+    # Non-secret placeholders satisfying `Settings()` validation only — no
+    # test in this suite makes a real LLM/provider call or needs a live
+    # database (Docker-only integration tests self-skip without Testcontainers).
+    # Without these, every test touching `get_settings()` fails fast with
+    # "Missing required environment variable(s)" (confirmed: this workflow
+    # ran with none set until tonight, and `tests/api/*` alone throws 62
+    # errors under those exact conditions).
+    env:
+      API_KEYS: ci_placeholder_key
+      DATABASE_URL: postgresql+asyncpg://ci:ci@localhost:5432/ci
+      LLM_API_KEY: ci_placeholder_key
+      LLM_MODEL: ci-placeholder-model
+      LLM_BASE_URL: http://localhost/v1
     steps:
       - uses: actions/checkout@v4
 
@@ -28,3 +41,35 @@ jobs:
 
       - name: Tests
         run: pytest -q
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type check
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Format check
+        run: npm run format:check
+
+      - name: Tests
+        run: npm test
+
+      - name: Build
+        run: npm run build

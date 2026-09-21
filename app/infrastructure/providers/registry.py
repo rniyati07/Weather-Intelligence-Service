@@ -130,9 +130,10 @@ class ProviderRegistry(ProviderRegistryPort):
         """Cached health for every registered provider, as plain domain records.
 
         A provider with no record yet has not been called since startup;
-        `HealthTracker.status()` reports that as available, and its
-        `lastCheckedAt` is the process start time rather than a fabricated
-        "now" that would imply a check that never happened.
+        `HealthTracker.status()` reports that as `unknown` (not `available`
+        — see ISSUE-3 in the E2E audit), and its `lastCheckedAt` is the
+        process start time rather than a fabricated "now" that would imply
+        a check that never happened.
         """
         records = self._health.snapshot()
         return [

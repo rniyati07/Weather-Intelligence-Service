@@ -63,7 +63,7 @@ class PlacesBackedAttractionProvider(AttractionPort):
             # list — never a fabricated one — and the chat prompt says so
             # explicitly, so the LLM explains the limitation instead of
             # inventing around it.
-            logger.warning("places_unavailable", extra={"error": str(exc)})
+            logger.warning("places_unavailable: %s", exc)
             places = []
 
         return build_attraction_recommendation(

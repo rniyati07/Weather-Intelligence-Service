@@ -39,12 +39,27 @@ _PACKING_KEYWORDS = ("pack", "packing", "bring", "wear", "luggage")
 _RECOMMENDATION_KEYWORDS = (
     "recommend", "suggest", "suggestion", "places", "place near", "attraction",
     "things to do", "what to do", "what can i do", "where should", "activities",
-    "beach", "beaches", "museum", "nightlife", "restaurant", "hike", "hiking",
+    "active", "beach", "beaches", "museum", "nightlife", "restaurant", "hike", "hiking",
     "shopping", "nearby", "near ",
+    # Stays and sports (Phase 1/2 categories) need their own coverage here too
+    # — this list feeds intent classification, a separate concern from
+    # `_interests_to_attraction_types`'s category mapping, which already had
+    # these words for a *recognized* recommendation turn. Without them here,
+    # a message like "what about sports to do" fell through every keyword
+    # list straight to GENERAL_CHAT whenever this fallback ran (Gemini's own
+    # classification unavailable), skipping the attraction fetch entirely.
+    "hotel", "hotels", "stay", "guest house", "hostel", "accommodation", "lodging",
+    "sport", "sports", "tennis", "golf", "football", "cricket",
 )
 _WEATHER_KEYWORDS = (
     "weather", "rain", "rainy", "sunny", "sunshine", "temperature", "hot", "cold",
     "forecast", "humid", "windy", "wind", "storm", "cloudy",
+    # "Which day is best?" is this product's own canonical example question
+    # (PRD, README, rebuild architecture doc all use it) — it was matching
+    # none of these lists and falling through to GENERAL_CHAT. A best/worst
+    # *day* judgment is exactly the deterministic engine's own output
+    # (bestDays/worstDays), so it belongs here, not RECOMMENDATION_REQUEST.
+    "which day", "best day", "worst day", "which is the best", "which is the worst",
 )
 
 

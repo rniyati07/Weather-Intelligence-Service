@@ -1,0 +1,31 @@
+2026-09-20T10:42:42.067233Z [info     ] request_handled                duration_ms=31.9 method=GET path=/health request_id=req_8477e3ac status_code=200
+INFO:     127.0.0.1:60677 - "GET /health HTTP/1.1" 200 OK
+HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://overpass-api.de/api/interpreter "HTTP/1.1 504 Gateway Timeout"
+HTTP Request: POST https://overpass-api.de/api/interpreter "HTTP/1.1 504 Gateway Timeout"
+HTTP Request: POST https://overpass-api.de/api/interpreter "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-09-20T10:43:18.061432Z [info     ] request_handled                duration_ms=30698.45 method=POST path=/api/v1/conversations/chat request_id=req_977710af status_code=200
+INFO:     127.0.0.1:60692 - "POST /api/v1/conversations/chat HTTP/1.1" 200 OK
+HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-09-20T10:43:28.485634Z [info     ] request_handled                duration_ms=2237.58 method=POST path=/api/v1/conversations/chat request_id=req_7132cf5f status_code=200
+INFO:     127.0.0.1:61692 - "POST /api/v1/conversations/chat HTTP/1.1" 200 OK
+HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://overpass-api.de/api/interpreter "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-09-20T10:43:39.416985Z [info     ] request_handled                duration_ms=4176.15 method=POST path=/api/v1/conversations/chat request_id=req_c530a33d status_code=200
+INFO:     127.0.0.1:61719 - "POST /api/v1/conversations/chat HTTP/1.1" 200 OK
+2026-09-20T10:45:20.404642Z [info     ] request_handled                duration_ms=51.25 method=GET path=/api/v1/conversations request_id=req_ac4a1aff status_code=200
+INFO:     127.0.0.1:64552 - "GET /api/v1/conversations HTTP/1.1" 200 OK
+2026-09-20T10:45:27.992234Z [info     ] request_handled                duration_ms=19.32 method=GET path=/api/v1/conversations/df06d2af-4a84-4a2f-9617-c62197493d59 request_id=req_67468a23 status_code=200
+INFO:     127.0.0.1:60168 - "GET /api/v1/conversations/df06d2af-4a84-4a2f-9617-c62197493d59 HTTP/1.1" 200 OK
+2026-09-20T10:45:28.131971Z [info     ] request_handled                duration_ms=24.28 method=GET path=/api/v1/locations/15.2993,74.1240/intelligence request_id=req_3c986c5d status_code=200
+INFO:     127.0.0.1:56239 - "GET /api/v1/locations/15.2993%2C74.1240/intelligence?startDate=2026-09-30&endDate=2026-10-04 HTTP/1.1" 200 OK
+HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://overpass-api.de/api/interpreter "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-09-20T10:46:38.897882Z [info     ] request_handled                duration_ms=11853.9 method=POST path=/api/v1/conversations/chat request_id=req_0978e246 status_code=200
+INFO:     127.0.0.1:54499 - "POST /api/v1/conversations/chat HTTP/1.1" 200 OK
+2026-09-20T10:46:38.995658Z [info     ] request_handled                duration_ms=32.46 method=GET path=/api/v1/conversations request_id=req_06abae1a status_code=200
+INFO:     127.0.0.1:53366 - "GET /api/v1/conversations HTTP/1.1" 200 OK

@@ -40,10 +40,10 @@ def adapter() -> OverpassPlacesProvider:
 
 
 def _mock(payload: object, status: int = 200) -> None:
-    """Answer identically on every host.
+    """Answer identically on every configured host.
 
-    The adapter falls through its mirror list on failure, so a test that only
-    mocked the primary would let a failure case escape to the real network
+    `_INTERPRETER_URLS` may list more than one host, so a test that only
+    mocked the first would let a failure case escape to the real network
     instead of asserting on the adapter.
     """
     for url in overpass._INTERPRETER_URLS:
@@ -102,6 +102,87 @@ class TestSearch:
         assert len(places) == 1
 
 
+class TestStaysAndSportsCategories:
+    """Real OSM tag mappings for stays (hotel/guest_house) and sports
+    facilities — same pipeline as every other category, no new provider
+    logic."""
+
+    @respx.mock
+    async def test_hotel_and_guest_house_map_to_their_categories(
+        self, adapter: OverpassPlacesProvider
+    ) -> None:
+        hotel = {
+            "type": "node",
+            "id": 501,
+            "lat": 15.31,
+            "lon": 74.13,
+            "tags": {"name": "Seaside Hotel", "tourism": "hotel"},
+        }
+        guest_house = {
+            "type": "node",
+            "id": 502,
+            "lat": 15.32,
+            "lon": 74.14,
+            "tags": {"name": "Backpacker Hostel", "tourism": "hostel"},
+        }
+        _mock({"elements": [hotel, guest_house]})
+
+        places = await adapter.search(
+            latitude=15.3,
+            longitude=74.1,
+            categories=(AttractionType.HOTEL, AttractionType.GUEST_HOUSE),
+        )
+
+        by_name = {p.name: p.category for p in places}
+        assert by_name["Seaside Hotel"] == AttractionType.HOTEL
+        assert by_name["Backpacker Hostel"] == AttractionType.GUEST_HOUSE
+
+    @respx.mock
+    async def test_sports_facility_tags_map_to_sports_facility(
+        self, adapter: OverpassPlacesProvider
+    ) -> None:
+        pitch = {
+            "type": "way",
+            "id": 503,
+            "center": {"lat": 15.33, "lon": 74.15},
+            "tags": {"name": "Town Sports Centre", "leisure": "sports_centre"},
+        }
+        _mock({"elements": [pitch]})
+
+        places = await adapter.search(
+            latitude=15.3, longitude=74.1, categories=(AttractionType.SPORTS_FACILITY,)
+        )
+
+        assert len(places) == 1
+        assert places[0].category == AttractionType.SPORTS_FACILITY
+
+    @respx.mock
+    async def test_broadened_food_tags_are_recognized(
+        self, adapter: OverpassPlacesProvider
+    ) -> None:
+        fast_food = {
+            "type": "node",
+            "id": 504,
+            "lat": 15.34,
+            "lon": 74.16,
+            "tags": {"name": "Quick Bites", "amenity": "fast_food"},
+        }
+        bakery = {
+            "type": "node",
+            "id": 505,
+            "lat": 15.35,
+            "lon": 74.17,
+            "tags": {"name": "Corner Bakery", "shop": "bakery"},
+        }
+        _mock({"elements": [fast_food, bakery]})
+
+        places = await adapter.search(
+            latitude=15.3, longitude=74.1, categories=(AttractionType.FOOD,)
+        )
+
+        assert {p.name for p in places} == {"Quick Bites", "Corner Bakery"}
+
+
 class TestMalformedElements:
     @respx.mock
     async def test_element_without_name_is_dropped(self, adapter: OverpassPlacesProvider) -> None:
@@ -123,7 +204,7 @@ class TestMalformedElements:
             "id": 333,
             "lat": 1.0,
             "lon": 2.0,
-            "tags": {"name": "Somewhere", "shop": "bakery"},
+            "tags": {"name": "Somewhere", "amenity": "parking"},
         }
         _mock({"elements": [unmapped, _BEACH_NODE]})
 
@@ -159,6 +240,91 @@ class TestMalformedElements:
         assert [p.name for p in places] == ["Calangute Beach"]
 
 
+class TestCategoryFairness:
+    """Live-observed regression: a multi-category request ("viewpoints,
+    cafes, beaches, monuments, restaurants") came back as restaurants only.
+    The category-matching itself was correct — the bug was one shared
+    `out center N` after every tag clause was unioned together, which let
+    an abundant category (restaurants, sorted first alphabetically) fill
+    the entire cap before a sparser clause (viewpoint, beach) ever
+    contributed a result."""
+
+    def test_each_tag_gets_its_own_out_statement(self) -> None:
+        query = overpass._build_query(
+            latitude=15.3,
+            longitude=74.1,
+            radius_m=15_000,
+            tag_pairs={("amenity", "restaurant"), ("tourism", "viewpoint"), ("natural", "beach")},
+            limit=30,
+        )
+
+        # One `nwr` immediately followed by its own `out` per tag — not a
+        # single unioned block with one shared `out` at the end.
+        assert query.count("out center") == 3
+        tags = [("amenity", "restaurant"), ("tourism", "viewpoint"), ("natural", "beach")]
+        for key, value in tags:
+            nwr_index = query.index(f'nwr["{key}"="{value}"]')
+            next_out_index = query.index("out center", nwr_index)
+            # No other nwr clause sits between this one and its own `out`.
+            assert "nwr[" not in query[nwr_index + 1 : next_out_index]
+
+    def test_per_tag_share_never_collapses_to_zero_with_many_categories(self) -> None:
+        query = overpass._build_query(
+            latitude=15.3,
+            longitude=74.1,
+            radius_m=15_000,
+            tag_pairs={
+                ("amenity", "restaurant"), ("tourism", "viewpoint"), ("natural", "beach"),
+                ("historic", "monument"), ("tourism", "museum"), ("tourism", "attraction"),
+                ("leisure", "park"), ("tourism", "hotel"), ("amenity", "cafe"),
+                ("leisure", "sports_centre"),
+            },
+            limit=20,  # fewer than the 10 categories requested
+        )
+
+        assert "out center 0" not in query
+        assert overpass._MIN_RESULTS_PER_TAG > 0
+        assert f"out center {overpass._MIN_RESULTS_PER_TAG}" in query
+
+    @respx.mock
+    async def test_a_sparse_category_is_not_crowded_out_by_an_abundant_one(
+        self, adapter: OverpassPlacesProvider
+    ) -> None:
+        """Overpass itself enforces the per-statement `out` cap (not
+        something this test can simulate through a mock), so this checks
+        the layer this codebase controls: parsing correctly keeps every
+        element Overpass actually returns, across every requested category,
+        with no additional truncation on top."""
+        restaurants = [
+            {
+                "type": "node",
+                "id": 1000 + i,
+                "lat": 15.3 + i * 0.001,
+                "lon": 74.1,
+                "tags": {"name": f"Restaurant {i}", "amenity": "restaurant"},
+            }
+            for i in range(30)
+        ]
+        viewpoint = {
+            "type": "node",
+            "id": 2000,
+            "lat": 15.31,
+            "lon": 74.11,
+            "tags": {"name": "Fort Aguada Viewpoint", "tourism": "viewpoint"},
+        }
+        _mock({"elements": [*restaurants, viewpoint]})
+
+        places = await adapter.search(
+            latitude=15.3,
+            longitude=74.1,
+            categories=(AttractionType.RESTAURANT, AttractionType.VIEWPOINT),
+        )
+
+        names = {p.name for p in places}
+        assert "Fort Aguada Viewpoint" in names
+        assert len(names) == 31
+
+
 class TestProviderFailure:
     @respx.mock
     async def test_server_error_raises_places_unavailable(
@@ -189,43 +355,29 @@ class TestProviderFailure:
             await adapter.search(latitude=15.3, longitude=74.1, categories=(AttractionType.BEACH,))
 
 
-class TestHostFallback:
-    """A public Overpass instance intermittently answers a valid query with
-    `504`. Retrying the same overloaded host does not help, so the adapter
-    falls through to a mirror — without it, a trip loses its places for a
-    reason that has nothing to do with the data."""
+class TestSingleHost:
+    """Only one Overpass host is configured (the former second host,
+    `overpass.kumi.systems`, was removed — measured dead, and it never once
+    rescued a request in production; see the comment on `_INTERPRETER_URLS`).
+    The fallback loop itself remains, so a primary failure is still a clean
+    `PlacesUnavailableError`, not an unhandled exception."""
 
     @respx.mock
-    async def test_falls_through_to_the_mirror_when_the_primary_fails(
+    async def test_only_one_host_is_configured(self) -> None:
+        assert len(overpass._INTERPRETER_URLS) == 1
+
+    @respx.mock
+    async def test_primary_failure_raises_places_unavailable_with_no_fallback(
         self, adapter: OverpassPlacesProvider
     ) -> None:
         primary = respx.post(overpass._INTERPRETER_URLS[0]).mock(
             return_value=httpx.Response(504, text="gateway timeout")
         )
-        mirror = respx.post(overpass._INTERPRETER_URLS[1]).mock(
-            return_value=httpx.Response(200, json={"elements": [_BEACH_NODE]})
-        )
 
-        places = await adapter.search(
-            latitude=15.3, longitude=74.1, categories=(AttractionType.BEACH,)
-        )
+        with pytest.raises(PlacesUnavailableError):
+            await adapter.search(latitude=15.3, longitude=74.1, categories=(AttractionType.BEACH,))
 
-        assert [place.name for place in places] == ["Calangute Beach"]
         assert primary.called
-        assert mirror.called
-
-    @respx.mock
-    async def test_does_not_call_the_mirror_when_the_primary_answers(
-        self, adapter: OverpassPlacesProvider
-    ) -> None:
-        respx.post(overpass._INTERPRETER_URLS[0]).mock(
-            return_value=httpx.Response(200, json={"elements": [_BEACH_NODE]})
-        )
-        mirror = respx.post(overpass._INTERPRETER_URLS[1])
-
-        await adapter.search(latitude=15.3, longitude=74.1, categories=(AttractionType.BEACH,))
-
-        assert not mirror.called
 
     @respx.mock
     async def test_unexpected_elements_shape_raises_places_unavailable(

@@ -36,13 +36,27 @@ def period_from_domain(period: Period) -> PeriodSchema:
 
 
 class DailySummarySchema(CamelModel):
-    """API Spec §9.4.1."""
+    """API Spec §9.4.1.
+
+    Fields from `humidity` down are additive (API Spec §12 — new optional
+    fields within a major version), real provider data carried straight
+    through from `NormalizedReading` for display purposes; a provider that
+    doesn't supply one serializes it as `null`, same as `humidity` already
+    could.
+    """
 
     temp_min_c: float
     temp_max_c: float
     precipitation_probability: float
     wind_speed_kph: float
     condition: str
+    humidity: float | None = None
+    feels_like_max_c: float | None = None
+    feels_like_min_c: float | None = None
+    uv_index_max: float | None = None
+    wind_gust_kph: float | None = None
+    sunrise: str | None = None
+    sunset: str | None = None
 
     @classmethod
     def from_domain(cls, summary: DailySummary) -> "DailySummarySchema":
@@ -52,6 +66,13 @@ class DailySummarySchema(CamelModel):
             precipitation_probability=summary.precipitation_probability,
             wind_speed_kph=summary.wind_speed_kph,
             condition=summary.condition.value,
+            humidity=summary.humidity,
+            feels_like_max_c=summary.feels_like_max_c,
+            feels_like_min_c=summary.feels_like_min_c,
+            uv_index_max=summary.uv_index_max,
+            wind_gust_kph=summary.wind_gust_kph,
+            sunrise=summary.sunrise,
+            sunset=summary.sunset,
         )
 
 

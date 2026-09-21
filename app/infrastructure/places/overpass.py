@@ -29,18 +29,18 @@ from app.infrastructure.providers.base import ProviderError, build_http_client, 
 
 logger = logging.getLogger(__name__)
 
-#: Public Overpass instances, tried in order.
+#: Public Overpass instance(s), tried in order.
 #:
-#: The main instance intermittently answers a perfectly valid query with
-#: `504 Gateway Timeout` under load. `call_with_retry` alone does not help:
-#: it retries the *same* overloaded host, so a trip could end up with no
-#: places at all while the data itself was fine. Falling through to a mirror
-#: is what makes places reliable in practice — same query, same parsing, and
-#: the first host that answers wins.
-_INTERPRETER_URLS = (
-    "https://overpass-api.de/api/interpreter",
-    "https://overpass.kumi.systems/api/interpreter",
-)
+#: A second host (`overpass.kumi.systems`) was carried here as a fallback for
+#: the main instance's intermittent `504 Gateway Timeout` under load. Measured
+#: independently it was unreachable — `ReadTimeout` after 40.5s against a 1.1s
+#: primary response — and production logs showed both hosts failing together
+#: on every occurrence, meaning it never once rescued a request. It only added
+#: up to ~40s of latency to every turn where the primary failed, so it has
+#: been removed rather than kept as dead weight. The fallback *mechanism*
+#: (`for url in _INTERPRETER_URLS`, below) stays, in case a verified-reachable
+#: second instance is added later.
+_INTERPRETER_URLS = ("https://overpass-api.de/api/interpreter",)
 
 #: Overpass's own execution budget, embedded in the query itself.
 #:
@@ -76,9 +76,22 @@ _CATEGORY_TAGS: dict[AttractionType, tuple[tuple[str, str], ...]] = {
     AttractionType.ADVENTURE: (("leisure", "water_park"),),
     AttractionType.FAMILY: (("leisure", "park"),),
     AttractionType.PHOTOGRAPHY: (("tourism", "viewpoint"),),
-    AttractionType.FOOD: (("amenity", "restaurant"), ("amenity", "cafe")),
+    AttractionType.FOOD: (
+        ("amenity", "restaurant"),
+        ("amenity", "cafe"),
+        ("amenity", "fast_food"),
+        ("shop", "bakery"),
+    ),
     AttractionType.HIKING: (("leisure", "nature_reserve"),),
     AttractionType.WATER_SPORTS: (("leisure", "water_park"), ("sport", "swimming")),
+    AttractionType.HOTEL: (("tourism", "hotel"),),
+    AttractionType.GUEST_HOUSE: (("tourism", "guest_house"), ("tourism", "hostel")),
+    AttractionType.SPORTS_FACILITY: (
+        ("leisure", "sports_centre"),
+        ("leisure", "pitch"),
+        ("leisure", "golf_course"),
+        ("leisure", "stadium"),
+    ),
 }
 
 #: Reverse lookup built once at import time: an OSM (key, value) pair maps
@@ -89,17 +102,34 @@ for _category, _pairs in _CATEGORY_TAGS.items():
         _TAG_TO_CATEGORY.setdefault(_pair, _category)
 
 
+#: A floor under the per-category share of `limit`, below below which even
+#: a very sparse category (relative to how many were requested at once)
+#: still gets a fair chance to contribute a result. See `_build_query`.
+_MIN_RESULTS_PER_TAG = 5
+
+
 def _build_query(
     *, latitude: float, longitude: float, radius_m: int, tag_pairs: set[tuple[str, str]], limit: int
 ) -> str:
-    """A bounded Overpass QL query — every clause is scoped by `around:`."""
+    """A bounded Overpass QL query — every clause is scoped by `around:`.
+
+    Each tag pair gets its own `out` immediately after its own `nwr`, capped
+    at a fair share of `limit` — not one shared `out` after every clause is
+    unioned together. Live-observed: a single shared cap systematically
+    starved sparser categories, because `amenity=restaurant` sorts first
+    and is abundant enough in Goa's OSM data to fill the entire limit
+    before a `tourism=viewpoint` or `natural=beach` clause ever
+    contributed a result — a multi-category request ("viewpoints, cafes,
+    beaches, monuments") came back as restaurants only, even though the
+    category-matching itself was correct.
+    """
     around = f"around:{radius_m},{latitude},{longitude}"
-    clauses = "\n".join(f'  nwr["{key}"="{value}"]({around});' for key, value in sorted(tag_pairs))
-    return (
-        f"[out:json][timeout:{_QUERY_TIMEOUT_SECONDS}];\n"
-        f"(\n{clauses}\n);\n"
-        f"out center {limit};"
+    per_tag_limit = max(limit // max(len(tag_pairs), 1), _MIN_RESULTS_PER_TAG)
+    statements = "\n".join(
+        f'nwr["{key}"="{value}"]({around});\nout center {per_tag_limit};'
+        for key, value in sorted(tag_pairs)
     )
+    return f"[out:json][timeout:{_QUERY_TIMEOUT_SECONDS}];\n{statements}"
 
 
 def _element_category(tags: dict[str, Any]) -> AttractionType | None:

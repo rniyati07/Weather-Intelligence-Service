@@ -24,6 +24,12 @@ def reading_to_payload(reading: NormalizedReading) -> dict[str, Any]:
         "source_class": reading.source_class,
         "precipitation_mm": reading.precipitation_mm,
         "humidity": reading.humidity,
+        "feels_like_max_c": reading.feels_like_max_c,
+        "feels_like_min_c": reading.feels_like_min_c,
+        "uv_index_max": reading.uv_index_max,
+        "wind_gust_kph": reading.wind_gust_kph,
+        "sunrise": reading.sunrise,
+        "sunset": reading.sunset,
     }
 
 
@@ -61,4 +67,22 @@ def reading_from_payload(payload: dict[str, Any]) -> NormalizedReading:
         humidity=(
             float(payload["humidity"]) if payload.get("humidity") is not None else None
         ),
+        feels_like_max_c=(
+            float(payload["feels_like_max_c"])
+            if payload.get("feels_like_max_c") is not None
+            else None
+        ),
+        feels_like_min_c=(
+            float(payload["feels_like_min_c"])
+            if payload.get("feels_like_min_c") is not None
+            else None
+        ),
+        uv_index_max=(
+            float(payload["uv_index_max"]) if payload.get("uv_index_max") is not None else None
+        ),
+        wind_gust_kph=(
+            float(payload["wind_gust_kph"]) if payload.get("wind_gust_kph") is not None else None
+        ),
+        sunrise=payload.get("sunrise"),
+        sunset=payload.get("sunset"),
     )

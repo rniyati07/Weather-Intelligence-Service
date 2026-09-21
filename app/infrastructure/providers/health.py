@@ -21,6 +21,15 @@ class ProviderStatus(StrEnum):
     AVAILABLE = "available"
     DEGRADED = "degraded"
     UNAVAILABLE = "unavailable"
+    #: Never actually called — distinct from `AVAILABLE`, which now means
+    #: "no *recorded failure*" only once at least one call has happened.
+    #: Additive per the contract's own versioning policy (API Spec §12:
+    #: "new enum values" are backward-compatible; consumers must already
+    #: "tolerate unknown enum values" per §15.2). See ISSUE-3 in the E2E
+    #: audit: reporting an unprobed provider as `available` let an operator
+    #: read three never-called fallback providers as "verified reachable"
+    #: when only the primary had ever actually been exercised.
+    UNKNOWN = "unknown"
 
 
 @dataclass(frozen=True, slots=True)
@@ -52,10 +61,17 @@ class HealthTracker:
         self._set(provider_name, status)
 
     def status(self, provider_name: str) -> ProviderStatus:
-        """Cached status, TTL-bounded. No record, or an expired one, reads as available."""
+        """Cached status, TTL-bounded.
+
+        No record at all means this provider has never actually been called
+        — reported as `UNKNOWN`, not `AVAILABLE`. An *expired* record is a
+        different case: it was genuinely exercised at some point with no
+        failure since, so it reads as `AVAILABLE` again rather than staying
+        stuck in a stale state forever.
+        """
         record = self._records.get(provider_name)
         if record is None:
-            return ProviderStatus.AVAILABLE
+            return ProviderStatus.UNKNOWN
         age_seconds = (datetime.now(UTC) - record.checked_at).total_seconds()
         if age_seconds > self._ttl_seconds:
             return ProviderStatus.AVAILABLE

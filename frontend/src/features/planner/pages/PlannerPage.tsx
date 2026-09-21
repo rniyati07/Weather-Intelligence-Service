@@ -19,9 +19,6 @@ import { TripDatesPanel } from '../components/TripDatesPanel'
  * outside the 16-day horizon and a reversed selection swaps, so a user should
  * never see a `400 VALIDATION_ERROR` from normal interaction. If they do, the
  * client-side guard has a bug (FDS §5.2).
- *
- * ⚠️ Geocoding is mocked. Only `data/planner.mock.ts` changes when the real
- * provider lands.
  */
 export function PlannerPage() {
   const navigate = useNavigate()

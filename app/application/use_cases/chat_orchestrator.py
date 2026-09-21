@@ -24,14 +24,17 @@ writes raw text back in the response; every fact in between is fetched or
 computed by the backend and merely restated.
 """
 
+import contextlib
 import json
 import logging
+import math
 import re
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
 from uuid import UUID
+from zoneinfo import ZoneInfo
 
 from app.application.use_cases.cached_intelligence import IntelligenceUseCase
 from app.domain.entities.attractions import (
@@ -77,17 +80,110 @@ def _format_history(messages: Sequence[Message]) -> str:
     lines = [f"{'User' if msg.role == 'user' else 'Assistant'}: {msg.content}" for msg in messages]
     return "\n".join(lines) if lines else "(start of conversation)"
 
+
+def _uv_category(uv_index: float) -> str:
+    """WHO UV Index categories — a public, standard scale, not invented."""
+    if uv_index >= 11:
+        return "extreme"
+    if uv_index >= 8:
+        return "very high"
+    if uv_index >= 6:
+        return "high"
+    if uv_index >= 3:
+        return "moderate"
+    return "low"
+
+
+def _local_clock_time(iso_utc: str | None, timezone_name: str | None) -> str | None:
+    """A UTC ISO datetime (Open-Meteo's `sunrise`/`sunset` shape) rendered in
+    the destination's own local time — a bare UTC timestamp would mislead
+    rather than help ("sunset at 12:53" means nothing to a traveler unless
+    it's already in their destination's clock). Falls back to UTC if the
+    destination's timezone wasn't resolved, rather than guessing one."""
+    if not iso_utc:
+        return None
+    try:
+        moment = datetime.fromisoformat(iso_utc)
+    except ValueError:
+        return None
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=UTC)
+    if timezone_name:
+        with contextlib.suppress(KeyError, ValueError):
+            moment = moment.astimezone(ZoneInfo(timezone_name))
+    return moment.strftime("%I:%M %p").lstrip("0")
+
+
 #: Turns kept in the prompt's conversation-history section. Bounded so a long
 #: conversation doesn't grow the prompt (and therefore cost/latency)
 #: unboundedly — recent context matters far more than early context once a
 #: trip's essentials are already captured in `TripContext`.
 _HISTORY_TURNS_IN_PROMPT = 6
 
+#: Structured extraction is a read-and-report task, not a creative one — a
+#: low temperature makes it far less likely to drop an explicitly-stated
+#: destination or date on an unlucky sampling draw. Narrative generation
+#: keeps the provider's own default (unset), since that response wants
+#: natural variation; this constant is for the extraction call only.
+_EXTRACTION_TEMPERATURE = 0.1
+
 #: Places referenced per day when building the LLM prompt AND when
 #: populating the structured `places` field on the response — one shared
 #: cap so the two can never drift apart: the reply can't mention a place
 #: absent from the structured list, and vice versa.
 _PLACES_PER_DAY_IN_RESPONSE = 3
+
+#: Same shared cap, raised for a turn that explicitly asked for detail —
+#: matches `attraction_matching._MAX_PLACES_PER_DAY`, the most the engine
+#: ever ranks for one day, so "raised" still means "every real place we
+#: actually have", never an invented one.
+_MAX_PLACES_PER_DAY_IN_RESPONSE = 6
+
+#: A user who explicitly asks for a checklist, a full itinerary, or "every
+#: day" wants a complete structured answer, not the terse 2-3 sentences
+#: every other question gets. Live testing found the fixed terse/no-list
+#: prompt rules actively fighting these requests: a packing "checklist" ask
+#: got an outright refusal (the model had real data but no way to present
+#: it within "no bullet lists, 3 sentences"), and "3 restaurants each day"
+#: still got one restaurant per day because "name at most two or three
+#: places" is a *whole-response* cap, not per-day.
+_DETAIL_REQUEST_KEYWORDS = (
+    "checklist", "itinerary", "detailed", "in detail", "guidelines",
+    "each day", "every day", "day by day", "day-by-day", "full plan",
+    "breakdown", "all the", "everything",
+)
+
+
+def _wants_detailed_response(message: str) -> bool:
+    lowered = message.lower()
+    return any(keyword in lowered for keyword in _DETAIL_REQUEST_KEYWORDS)
+
+
+#: Live-observed regression: once any specific interest (e.g. "food") gets
+#: recorded on the trip, it never narrows back — `TripContext.interests`
+#: only ever accumulates — so a later, broader ask ("proper itinerary with
+#: viewpoints, cafes, beaches, monuments, things to do") stayed scoped to
+#: just that one earlier category forever, and every place search kept
+#: returning restaurants only. A message that explicitly asks "what's here"
+#: in general must widen the search back out, not stay crowded out by
+#: whatever narrow thing was mentioned first.
+_BROAD_ITINERARY_PHRASES = (
+    "things to do", "places to visit", "places to see", "what to see",
+    "what to do", "sightseeing", "what all is there",
+)
+_BROAD_ITINERARY_SPREAD = (
+    AttractionType.LANDMARK,
+    AttractionType.VIEWPOINT,
+    AttractionType.BEACH,
+    AttractionType.MUSEUM,
+    AttractionType.CULTURAL_SITE,
+    AttractionType.RESTAURANT,
+)
+
+
+def _wants_broad_itinerary(message: str) -> bool:
+    lowered = message.lower()
+    return any(phrase in lowered for phrase in _BROAD_ITINERARY_PHRASES)
 
 #: How many geocoding candidates a destination-clarification turn offers.
 #: Mirrors `GeocodingPort.DEFAULT_SEARCH_LIMIT` — enough to disambiguate
@@ -106,21 +202,72 @@ _ORDINAL_WORDS: dict[str, int] = {
 }
 
 
-def _is_ambiguous_candidates(candidates: list[GeocodedPlace]) -> bool:
-    """True when the top geocoding candidates plausibly name different places.
+def _is_ambiguous_candidates(candidates: list[GeocodedPlace], query: str) -> bool:
+    """True when the top geocoding candidates plausibly name different places
+    the user could actually mean.
 
-    Deliberately narrow: candidates that share one country are treated as
-    the same place ranked several ways (duplicate gazetteer entries,
-    districts of one city) and resolved automatically, exactly as before
-    this feature existed. Candidates split across more than one country are
-    the case a fuzzy, population-ranked geocoder actually gets wrong for a
-    chat assistant — a bare "Paris" resolving to Paris, France vs. Paris,
-    Texas — and that is what gets asked about, not every multi-result query.
+    Country-diversity alone isn't enough: a fuzzy, population-ranked
+    geocoder returns loosely similar-*sounding* places from anywhere in the
+    world alongside a genuine match — live-observed: "varkala kerala"
+    returning both "Varkala, India" (the obvious match) and
+    "Varkalabiškės, Lithuania" (an unrelated village that happens to fold
+    close enough to rank). Asking the user to disambiguate against a place
+    they were never talking about is not the same failure mode as the
+    intended case: a bare "Paris" resolving to Paris, France vs. Paris,
+    Texas, where BOTH candidates are literally named "Paris". Restricting
+    the country-diversity check to candidates whose name actually appears in
+    what the user typed keeps the Paris case working while dropping the
+    Varkala one.
+
+    Country alone under-triggers: live-observed, "Manali" returns a 35k-
+    population Chennai suburb (Tamil Nadu) ranked above the 8k-population
+    Himalayan hill station (Himachal Pradesh) tourists actually mean —
+    Open-Meteo's population ranking has no notion of tourism relevance, and
+    both candidates share a country, so a country-only check silently
+    accepts the wrong one. Comparing (country, region) instead catches any
+    same-country candidates that are genuinely different places, while two
+    rows for the same real place (identical country and region) still
+    collapse to one identity and stay non-ambiguous.
     """
     if len(candidates) < 2:
         return False
-    identities = {candidate.country_code or candidate.country for candidate in candidates}
+    folded_query = query.strip().casefold()
+    contenders = [c for c in candidates if c.name.strip().casefold() in folded_query]
+    if len(contenders) < 2:
+        return False
+    identities = {(c.country_code or c.country, c.admin1) for c in contenders}
     return len(identities) > 1
+
+
+#: A `searchArea` this far or further from the established trip destination
+#: is treated as a bad extraction, not a genuine "near X" recentering — see
+#: `ChatOrchestrator._resolve_search_area`. Generous enough to cover a whole
+#: metro area or a nearby town (a state-sized radius), tight enough to catch
+#: a fuzzy geocoder match landing in the wrong country.
+_MAX_SEARCH_AREA_DISTANCE_KM = 150.0
+_EARTH_RADIUS_KM = 6371.0
+
+
+def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """Great-circle distance between two points, in kilometers."""
+    phi1, phi2 = math.radians(lat1), math.radians(lat2)
+    d_phi = math.radians(lat2 - lat1)
+    d_lambda = math.radians(lon2 - lon1)
+    a = math.sin(d_phi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(d_lambda / 2) ** 2
+    return 2 * _EARTH_RADIUS_KM * math.asin(math.sqrt(a))
+
+
+def _clarification_label(candidate: GeocodedPlace) -> str:
+    """A disambiguation-list line for one candidate — unlike
+    `GeocodedPlace.display_name` (name + country only, fine for the normal
+    single-result case), this always includes the region too. Live-observed:
+    same-country candidates (the "Manali" case `_is_ambiguous_candidates`
+    above now also catches) rendered as identical lines ("1. Manali, India"
+    through "5. Manali, India") with `display_name` alone — nothing let the
+    user actually tell them apart.
+    """
+    parts = [candidate.name, candidate.admin1, candidate.country]
+    return ", ".join(part for part in parts if part)
 
 
 def _geocoded_place_to_dict(place: GeocodedPlace) -> dict[str, object]:
@@ -150,26 +297,27 @@ def _geocoded_place_to_dict(place: GeocodedPlace) -> dict[str, object]:
 #: essay with different emphasis.
 _INTENT_RESPONSE_SHAPES: dict[ChatIntent, str] = {
     ChatIntent.TRIP_PLANNING: (
-        "state the trip's headline verdict in one sentence and the single thing that most "
-        "shapes it in another — the outlook, days and packing are already on screen beside "
-        "you, so do not walk through them"
+        "give the headline verdict on the trip and what's driving it, like you're texting a "
+        "friend the gist — the outlook, days and packing are already on screen, so add color "
+        "rather than repeating the numbers"
     ),
     ChatIntent.ITINERARY_REQUEST: (
-        "one short line per day, no preamble before the first day and nothing after the last"
+        "walk through the days like you're actually planning it with them — for each day, "
+        "name the real spots and give each a little flavor: what it's known for, what's "
+        "nearby, why it fits that day's weather. Easy to skim, not a dry list of names"
     ),
     ChatIntent.WEATHER_QUESTION: (
-        "name the day and its condition, then what to do about it — two sentences total"
+        "tell them what the day looks like and what that means for their plans, naturally"
     ),
     ChatIntent.RECOMMENDATION_REQUEST: (
-        "name the places and who each suits, nothing else; if none were provided, say in one "
-        "full sentence that you have no places for this destination yet and suggest what the "
-        "weather makes sensible instead — never answer with a bare word like 'None'"
+        "recommend the real places above like you're tipping off a friend — what each is "
+        "known for, why it's worth going, what's nearby. If none were provided, say so "
+        "warmly and suggest what the weather makes sensible instead — never a bare 'None'"
     ),
     ChatIntent.PACKING_REQUEST: (
-        "the items as one comma-separated run, plus at most one clause on why the weather "
-        "calls for them"
+        "walk through what to pack and why, conversationally — a natural list is great here"
     ),
-    ChatIntent.GENERAL_CHAT: "one or two sentences",
+    ChatIntent.GENERAL_CHAT: "keep it short and friendly, like a quick reply",
 }
 
 
@@ -269,6 +417,18 @@ class EntityExtractor:
             "friends", "parents", "of", "a", "an", "the", "and", "with",
             "january", "february", "march", "april", "may", "june", "july",
             "august", "september", "october", "november", "december",
+            # Question words and common request phrasing — without these, a
+            # follow-up question ("Which day is best?", "Can you find me a
+            # hotel?") had its leading capitalized word misread as a
+            # destination by this heuristic. Only reachable when the LLM call
+            # itself fails (this heuristic is the fallback path), but a
+            # question is exactly the shape of message that path must not
+            # get wrong, since a mid-conversation follow-up is exactly when
+            # a destination should almost never be re-extracted.
+            "which", "what", "who", "where", "when", "how", "why", "can", "could",
+            "would", "should", "do", "does", "did", "is", "was", "were",
+            "you", "your", "me", "find", "any", "some", "good", "nice", "best",
+            "places", "place",
         }
     )
 
@@ -342,7 +502,28 @@ class EntityExtractor:
         )
         travel_style = current_context.travel_style or "not yet known"
         pace = current_context.pace or "not yet known"
-        intent_values = ", ".join(f'"{value.value}"' for value in ChatIntent)
+        # ISSUE-5 (E2E audit): the bare enum-name list alone left "which day
+        # is best?" and "what places can I visit?" both landing on
+        # `itinerary_request` — a label with no definition is ambiguous
+        # between "asking about one day" and "asking for the whole trip's
+        # schedule". Each value gets one disambiguating clause instead.
+        intent_guide = (
+            'trip_planning (establishing or changing the trip itself — '
+            "destination, dates, interests, style, pace), "
+            "itinerary_request (an explicit ask for a day-by-day plan or "
+            "schedule across the WHOLE trip, e.g. \"plan out each day\"), "
+            "weather_question (asking about conditions for a day or the whole "
+            "trip, which day is best/worst, or safety/risk — e.g. \"which day "
+            'is best?", "what if it rains?", "is it safe to travel", "any '
+            'risks I should know about" — not a request for places), '
+            "recommendation_request (asking what places, activities, food, "
+            "or stays to visit or do), "
+            "packing_request (what to bring or wear), "
+            "general_chat (ONLY genuine small talk with no trip-planning "
+            "content — thanks, greetings, chit-chat — never a real question "
+            "about the trip's weather, safety, places, or plan, even a vague "
+            'or broadly-phrased one)'
+        )
 
         return (
             "You are the understanding layer of a conversational travel-planning "
@@ -371,15 +552,20 @@ class EntityExtractor:
             '— never the main trip destination, never set together with destination",\n'
             '  "startDate": "YYYY-MM-DD — only an explicit or unambiguous calendar date",\n'
             '  "endDate": "YYYY-MM-DD — only an explicit or unambiguous calendar date",\n'
-            '  "duration": integer number of days, only if the message states a trip '
-            "length (e.g. \"4-day trip\") and does not already give both dates,\n"
-            '  "interests": ["short interest words actually mentioned, e.g. nature, '
-            'food, beaches"],\n'
+            '  "duration": integer number of days, whenever the message states a trip '
+            "length (e.g. \"4-day trip\"), even alongside a startDate — give BOTH "
+            "together when the message has a start date but not an end date (e.g. "
+            "\"4-day trip starting Oct 1\" -> startDate AND duration, never just one); "
+            "omit duration only if the message already gives an explicit endDate,\n"
+            '  "interests": ["short words naming ONLY what the latest message itself '
+            "asks for — a leisure theme (e.g. a place, activity, or food style) or a "
+            "practical need (e.g. lodging, a sport) count equally, but every word here "
+            'must trace to something the user actually wrote this turn"],\n'
             '  "travelStyle": "solo | couple | family | friends | business — inferred '
             'from who is travelling",\n'
             '  "pace": "short free-text pace preference, e.g. relaxed, packed, '
             'moderate",\n'
-            f'  "intent": "exactly one of: {intent_values}"\n'
+            f'  "intent": "exactly one of: {intent_guide}"\n'
             "}\n\n"
             "Rules:\n"
             "- Never invent a date, destination, or fact not present in the message or "
@@ -391,6 +577,16 @@ class EntityExtractor:
             "in which case use next year instead — always the nearest such date on or "
             "after today. A date that already includes an explicit year is used as-is.\n"
             "- destination and searchArea never both appear on the same turn.\n"
+            "- destination and searchArea must be an actual place name (a city, region, "
+            "country, or landmark) — never a pronoun, article, or question word (\"can\", "
+            "\"any\", \"what\", \"which\", \"there\", \"it\"). A question that happens to "
+            "start with one of those words is not a destination mention; when in doubt, "
+            "omit the field.\n"
+            "- interests: only words the LATEST message itself introduces. A message "
+            "that doesn't mention any interest (e.g. \"which day is best?\") must omit "
+            "interests entirely — never repeat interests already established earlier in "
+            "the conversation above; the caller keeps those, so repeating them back "
+            "changes nothing and risks fabricating ones the latest message never said.\n"
             "- intent must be exactly one of the listed values, nothing else.\n"
             "- Output strictly the JSON object, nothing else."
         )
@@ -407,6 +603,7 @@ class EntityExtractor:
             system_prompt=prompt,
             user_content="Extract the structured request from the latest message above.",
             json_mode=True,
+            temperature=_EXTRACTION_TEMPERATURE,
         )
         parsed = json.loads(raw_text.strip())
         if not isinstance(parsed, dict):
@@ -648,7 +845,7 @@ class ChatOrchestrator:
                 candidates = []
                 logger.warning("geocoding_failed", extra={"query": destination_query})
             if candidates:
-                if _is_ambiguous_candidates(candidates):
+                if _is_ambiguous_candidates(candidates, destination_query):
                     # Genuinely different places sharing a name (the classic
                     # case: Paris, France vs. Paris, Texas) — resolving
                     # silently risks planning the wrong trip entirely. Leave
@@ -690,6 +887,23 @@ class ChatOrchestrator:
             new_context = replace(
                 new_context, end_date=new_context.start_date + timedelta(days=duration - 1)
             )
+
+        # A bare single-day weather question ("will it rain in Mumbai
+        # tomorrow?") gives a start date but never states a trip length —
+        # unlike `trip_planning` wording, there's no "trip" being described
+        # here to ask an end date *for*. Forcing the "when does your trip
+        # end?" clarification onto a one-off forecast question is exactly
+        # the kind of friction that makes the assistant feel like a form,
+        # not a conversation, so a `weather_question` with only a start date
+        # is read as asking about that single day, not opening a new trip.
+        # `trip_planning` keeps asking, as it should: that wording usually
+        # means more details (an end date, a duration) are still coming.
+        if (
+            extracted.get("intent") == "weather_question"
+            and new_context.start_date is not None
+            and new_context.end_date is None
+        ):
+            new_context = replace(new_context, end_date=new_context.start_date)
 
         # Same rule the HTTP layer enforces (`domain.rules.date_range`),
         # checked before any weather/provider I/O — a chat turn must not
@@ -758,15 +972,23 @@ class ChatOrchestrator:
             # Keyword classification is for turns *after* a trip is already
             # established, not the turn that establishes it.
             intent = ChatIntent.TRIP_PLANNING
-            search_area = await self._resolve_search_area(extracted)
+            search_area = await self._resolve_search_area(extracted, new_context.destination)
             response, llm_generated, response_places = await self._generate_travel_response(
-                conversation, new_context, intent, search_area=search_area
+                conversation,
+                new_context,
+                intent,
+                user_message=user_message,
+                search_area=search_area,
             )
         else:
             intent = self._resolve_intent(extracted.get("intent"), user_message, new_context)
-            search_area = await self._resolve_search_area(extracted)
+            search_area = await self._resolve_search_area(extracted, new_context.destination)
             response, llm_generated, response_places = await self._generate_travel_response(
-                conversation, new_context, intent, search_area=search_area
+                conversation,
+                new_context,
+                intent,
+                user_message=user_message,
+                search_area=search_area,
             )
 
         conversation = conversation.add_assistant_message(
@@ -933,7 +1155,7 @@ class ChatOrchestrator:
         name = query or "that place"
         lines = [f'I found more than one location named "{name}". Which one do you mean?']
         for index, candidate in enumerate(candidates, start=1):
-            lines.append(f"{index}. {candidate.display_name}")
+            lines.append(f"{index}. {_clarification_label(candidate)}")
         lines.append("Reply with the number, or tell me which one you meant.")
         return "\n".join(lines)
 
@@ -952,7 +1174,9 @@ class ChatOrchestrator:
                 logger.warning("unrecognized_intent_from_extraction", extra={"intent": raw_intent})
         return classify_intent(message, context)
 
-    async def _resolve_search_area(self, extracted: dict[str, Any]) -> GeocodedPlace | None:
+    async def _resolve_search_area(
+        self, extracted: dict[str, Any], trip_destination: GeocodedPlace | None
+    ) -> GeocodedPlace | None:
         """Geocode the sub-location this turn named ("near Panjim"), if any.
 
         `search_area` comes from the same structured extraction as
@@ -963,6 +1187,17 @@ class ChatOrchestrator:
         the conversation's real `TripContext` — the trip destination stays
         whatever it already was. `None` means no sub-location was named,
         which is the common case.
+
+        Live-observed: the extraction prompt asks for a place "within or
+        near" the trip destination, but nothing enforces that Gemini's
+        output actually is one — one call extracted `searchArea: "that
+        restaurant"` from "can you book me a table at that restaurant for
+        dinner", and the geocoder's fuzzy match for that phrase returned a
+        real but utterly unrelated place across the world. The backend
+        guard the architecture keeps room for: any candidate implausibly far
+        from the established trip destination is discarded rather than
+        silently recentering the whole attraction search on the wrong
+        country.
         """
         query = extracted.get("search_area")
         if not isinstance(query, str) or not query.strip():
@@ -972,7 +1207,23 @@ class ChatOrchestrator:
         except Exception:
             logger.warning("search_area_geocoding_failed", extra={"query": query})
             return None
-        return candidates[0] if candidates else None
+        if not candidates:
+            return None
+        candidate = candidates[0]
+        if trip_destination is not None:
+            distance_km = _haversine_km(
+                trip_destination.latitude,
+                trip_destination.longitude,
+                candidate.latitude,
+                candidate.longitude,
+            )
+            if distance_km > _MAX_SEARCH_AREA_DISTANCE_KM:
+                logger.warning(
+                    "search_area_implausibly_far",
+                    extra={"query": query, "distance_km": round(distance_km)},
+                )
+                return None
+        return candidate
 
     async def _generate_travel_response(
         self,
@@ -980,14 +1231,16 @@ class ChatOrchestrator:
         context: TripContext,
         intent: ChatIntent,
         *,
+        user_message: str,
         search_area: GeocodedPlace | None = None,
     ) -> tuple[str, bool, tuple[Attraction, ...]]:
         """Fetch what `intent` needs, then generate the response.
 
-        `general_chat` skips both weather and attraction fetches entirely.
-        `packing_request` fetches intelligence only — the packing list it
-        needs is already part of that result, and no place lookup applies.
-        Every other intent, `weather_question` included, fetches places too:
+        Intelligence is always fetched — cheap and cached by the time this
+        runs (see below) — but `general_chat` and `packing_request` skip the
+        attraction-provider call: no place lookup applies to either, and it's
+        the one real per-turn cost in this method. Every other intent,
+        `weather_question` included, fetches places too:
         a "what if it rains?" question is implicitly asking what to do about
         it, and the weather-aware ranking already surfaces indoor/good-
         weather options first on a poor-weather day — the places call is
@@ -1002,22 +1255,31 @@ class ChatOrchestrator:
         assert context.start_date is not None
         assert context.end_date is not None
 
-        intelligence: WeatherIntelligence | None = None
+        # Fetched unconditionally, `general_chat` included: this method only
+        # ever runs once the trip is already fully established (the asserts
+        # above), so the fetch is already cheap and cached
+        # (`CachedIntelligenceUseCase`) by the time any turn reaches here —
+        # not the same cost tradeoff as the attraction-provider call below,
+        # which does real per-turn work. Skipping it used to mean an
+        # intent-classification miss (a real question the model mislabeled
+        # general_chat — live-observed with "is it safe to travel each
+        # day?") left the model with zero data and nothing to answer with,
+        # producing the bare fallback stub instead of a real answer.
+        intelligence_result = await self._intelligence_use_case.execute(
+            latitude=context.destination.latitude,
+            longitude=context.destination.longitude,
+            start=context.start_date,
+            end=context.end_date,
+            name=context.destination.display_name,
+        )
+        intelligence = intelligence_result.intelligence
         attractions: AttractionRecommendation | None = None
-
-        if intent is not ChatIntent.GENERAL_CHAT:
-            intelligence_result = await self._intelligence_use_case.execute(
-                latitude=context.destination.latitude,
-                longitude=context.destination.longitude,
-                start=context.start_date,
-                end=context.end_date,
-                name=context.destination.display_name,
-            )
-            intelligence = intelligence_result.intelligence
 
         if intent not in (ChatIntent.GENERAL_CHAT, ChatIntent.PACKING_REQUEST):
             assert intelligence is not None
-            preferred_types = self._interests_to_attraction_types(context.interests)
+            preferred_types = self._interests_to_attraction_types(
+                context.interests, message=user_message
+            )
             attraction_context = (
                 context.merge(destination=search_area) if search_area is not None else context
             )
@@ -1027,6 +1289,17 @@ class ChatOrchestrator:
                 preferred_types=preferred_types,
             )
 
+        # An itinerary or recommendation ask is inherently a "give me the
+        # spread" question — it shouldn't need the user to also say
+        # "checklist" or "every day" to get more than a token place or two.
+        wants_detail = _wants_detailed_response(user_message) or intent in (
+            ChatIntent.ITINERARY_REQUEST,
+            ChatIntent.RECOMMENDATION_REQUEST,
+        )
+        places_per_day = (
+            _MAX_PLACES_PER_DAY_IN_RESPONSE if wants_detail else _PLACES_PER_DAY_IN_RESPONSE
+        )
+
         response_text, llm_generated = await self._generate_conversational_narrative(
             conversation=conversation,
             context=context,
@@ -1034,57 +1307,100 @@ class ChatOrchestrator:
             intelligence=intelligence,
             attractions=attractions,
             search_area=search_area,
+            wants_detail=wants_detail,
+            places_per_day=places_per_day,
         )
-        return response_text, llm_generated, self._select_response_places(attractions)
+        places = self._select_response_places(attractions, places_per_day=places_per_day)
+        return response_text, llm_generated, places
 
     def _select_response_places(
-        self, attractions: AttractionRecommendation | None
+        self, attractions: AttractionRecommendation | None, *, places_per_day: int
     ) -> tuple[Attraction, ...]:
         """The exact places this turn's reply is allowed to mention.
 
-        Same per-day cap the prompt itself uses (`_PLACES_PER_DAY_IN_RESPONSE`),
-        flattened across days and deduplicated by id, in day order — so the
-        structured `places` field returned to the caller can never contain a
-        place absent from what Gemini was actually shown, or vice versa.
+        Same per-day cap the prompt itself uses, flattened across days and
+        deduplicated by id, in day order — so the structured `places` field
+        returned to the caller can never contain a place absent from what
+        the LLM was actually shown, or vice versa.
         """
         if attractions is None:
             return ()
         seen: set[str] = set()
         selected: list[Attraction] = []
         for day in attractions.daily:
-            for attraction in day.attractions[:_PLACES_PER_DAY_IN_RESPONSE]:
+            for attraction in day.attractions[:places_per_day]:
                 if attraction.id not in seen:
                     seen.add(attraction.id)
                     selected.append(attraction)
         return tuple(selected)
 
     def _interests_to_attraction_types(
-        self, interests: tuple[str, ...]
+        self, interests: tuple[str, ...], *, message: str = ""
     ) -> tuple[AttractionType, ...]:
-        """Map user interests to attraction types."""
+        """Map user interests to attraction types.
+
+        Also scans the raw turn `message` directly, not just the LLM's own
+        `interests` extraction — live testing found the extraction step
+        doesn't reliably echo back every interest word verbatim (observed:
+        identical "find me a nice hotel" turns returned `interests: ['hotel']`
+        on roughly 1 in 3 calls, ordinary LLM sampling variance, not a bug in
+        the extraction prompt). A category the user explicitly named in this
+        turn must not be missed just because that one call's extraction
+        didn't surface it.
+        """
         mapping = {
             "beach": AttractionType.BEACH,
             "food": AttractionType.FOOD,
+            "cafe": AttractionType.FOOD,
+            "restaurant": AttractionType.RESTAURANT,
             "museum": AttractionType.MUSEUM,
             "nightlife": AttractionType.NIGHTLIFE,
             "hiking": AttractionType.HIKING,
             "nature": AttractionType.NATURE,
             "shopping": AttractionType.SHOPPING,
+            "market": AttractionType.SHOPPING,
             "photography": AttractionType.PHOTOGRAPHY,
             "adventure": AttractionType.ADVENTURE,
             "wellness": AttractionType.WELLNESS,
             "family": AttractionType.FAMILY,
             "culture": AttractionType.CULTURAL_SITE,
+            "monument": AttractionType.CULTURAL_SITE,
+            "temple": AttractionType.CULTURAL_SITE,
+            "gallery": AttractionType.CULTURAL_SITE,
             "landmark": AttractionType.LANDMARK,
+            "attraction": AttractionType.LANDMARK,
+            "sightseeing": AttractionType.LANDMARK,
+            "viewpoint": AttractionType.VIEWPOINT,
+            "view point": AttractionType.VIEWPOINT,
+            "wildlife": AttractionType.WILDLIFE,
+            "zoo": AttractionType.WILDLIFE,
             "water sports": AttractionType.WATER_SPORTS,
             "outdoor": AttractionType.OUTDOOR_ACTIVITY,
             "indoor": AttractionType.INDOOR_ACTIVITY,
+            "hotel": AttractionType.HOTEL,
+            "stay": AttractionType.HOTEL,
+            "accommodation": AttractionType.HOTEL,
+            "lodging": AttractionType.HOTEL,
+            "guest house": AttractionType.GUEST_HOUSE,
+            "hostel": AttractionType.GUEST_HOUSE,
+            "sports": AttractionType.SPORTS_FACILITY,
+            "tennis": AttractionType.SPORTS_FACILITY,
+            "golf": AttractionType.SPORTS_FACILITY,
+            "football": AttractionType.SPORTS_FACILITY,
+            "cricket": AttractionType.SPORTS_FACILITY,
         }
         types = []
-        for interest in interests:
+        haystacks = [interest.lower() for interest in interests]
+        if message:
+            haystacks.append(message.lower())
+        for haystack in haystacks:
             for key, atype in mapping.items():
-                if key in interest.lower():
+                if key in haystack:
                     types.append(atype)
+
+        if message and _wants_broad_itinerary(message):
+            types.extend(_BROAD_ITINERARY_SPREAD)
+
         seen: set[AttractionType] = set()
         deduped = []
         for atype in types:
@@ -1102,6 +1418,8 @@ class ChatOrchestrator:
         intelligence: WeatherIntelligence | None,
         attractions: AttractionRecommendation | None,
         search_area: GeocodedPlace | None = None,
+        wants_detail: bool = False,
+        places_per_day: int = _PLACES_PER_DAY_IN_RESPONSE,
     ) -> tuple[str, bool]:
         """Generate the response via the LLM; fall back to a structured
         summary only if the call itself fails (approved decision: chat
@@ -1115,6 +1433,8 @@ class ChatOrchestrator:
             context=context,
             intent=intent,
             intelligence=intelligence,
+            wants_detail=wants_detail,
+            places_per_day=places_per_day,
             attractions=attractions,
             search_area=search_area,
         )
@@ -1141,6 +1461,8 @@ class ChatOrchestrator:
         intelligence: WeatherIntelligence | None,
         attractions: AttractionRecommendation | None,
         search_area: GeocodedPlace | None = None,
+        wants_detail: bool = False,
+        places_per_day: int = _PLACES_PER_DAY_IN_RESPONSE,
     ) -> str:
         """Build the full prompt for the conversational response.
 
@@ -1182,24 +1504,68 @@ class ChatOrchestrator:
             trip_summary = intelligence.trip_summary
             best_days = ", ".join(d.isoformat() for d in trip_summary.best_days[:2])
             worst_days = ", ".join(d.isoformat() for d in trip_summary.worst_days[:2])
-            packing = ", ".join(trip_summary.overall_packing_list[:5])
+            packing_count = 10 if wants_detail else 5
+            packing = ", ".join(trip_summary.overall_packing_list[:packing_count])
+            timezone_name = context.destination.timezone if context.destination else None
+
+            # Real per-day detail the deterministic engine already computes —
+            # previously never reached this prompt at all, only the
+            # trip-level rollup did. Without it, a live response reused the
+            # single trip-level suitability score for every day in a table,
+            # mislabeling it as if it varied day to day. UV/feels-like/
+            # sunrise/sunset are the newly-fetched Open-Meteo fields; a
+            # provider that lacks one just omits that clause, never guesses.
+            daily_lines = []
+            for day in intelligence.daily_intelligence:
+                summary = day.summary
+                parts = [
+                    f"{day.date.strftime('%a %b %d')}: {summary.condition.value}, "
+                    f"{summary.temp_min_c:.0f}-{summary.temp_max_c:.0f}°C"
+                ]
+                if summary.feels_like_max_c is not None:
+                    parts.append(f"(feels up to {summary.feels_like_max_c:.0f}°C)")
+                parts.append(f"{summary.precipitation_probability:.0%} rain")
+                wind = f"wind {summary.wind_speed_kph:.0f} km/h"
+                if summary.wind_gust_kph is not None:
+                    wind += f" (gusts {summary.wind_gust_kph:.0f})"
+                parts.append(wind)
+                if summary.humidity is not None:
+                    parts.append(f"humidity {summary.humidity:.0%}")
+                if summary.uv_index_max is not None:
+                    parts.append(
+                        f"UV {summary.uv_index_max:.0f} ({_uv_category(summary.uv_index_max)})"
+                    )
+                sunrise = _local_clock_time(summary.sunrise, timezone_name)
+                sunset = _local_clock_time(summary.sunset, timezone_name)
+                if sunrise and sunset:
+                    parts.append(f"sun {sunrise}–{sunset}")
+                top_activity = max(
+                    day.activity_suitability, key=lambda entry: entry.score, default=None
+                )
+                verdict = f"{day.risk_assessment.overall_risk_level} risk, {day.travel_advisory}"
+                if top_activity is not None:
+                    verdict += f", best for {top_activity.activity} ({top_activity.score}/100)"
+                daily_lines.append(f"  {', '.join(parts)} — {verdict}")
+
             sections.append(
-                "WEATHER INTELLIGENCE (already computed — restate only, never alter):\n"
+                "WEATHER INTELLIGENCE (already computed, real data — restate only, never "
+                "alter or invent a number not shown here):\n"
                 f"- Trip suitability score: {trip_summary.trip_suitability_score}/100\n"
                 f"- Travel confidence: {trip_summary.travel_confidence:.0%}\n"
                 f"- Best days: {best_days}\n"
                 f"- Watch-out days: {worst_days}\n"
                 f"- Overall risk: {trip_summary.overall_risk_level}\n"
-                f"- Packing: {packing}"
+                f"- Packing: {packing}\n"
+                "- Day by day:\n" + "\n".join(daily_lines)
             )
 
         if attractions is not None:
             attr_lines = []
             for day_attr in attractions.daily:
                 day_str = day_attr.date.strftime("%a %b %d")
-                day_places = day_attr.attractions[:_PLACES_PER_DAY_IN_RESPONSE]
-                names = ", ".join(a.name for a in day_places)
-                attr_lines.append(f"  {day_str}: {names}")
+                day_places = day_attr.attractions[:places_per_day]
+                named = ", ".join(f"{a.name} ({a.type.value})" for a in day_places)
+                attr_lines.append(f"  {day_str}: {named}")
             area_note = (
                 f" — the user asked specifically about {search_area.display_name}, "
                 f"so these are centered there rather than on {dest} generally"
@@ -1207,35 +1573,77 @@ class ChatOrchestrator:
                 else ""
             )
             sections.append(
-                f"DAILY ATTRACTIONS (real places from the places provider{area_note} — "
-                "never invent a name not listed here):\n" + "\n".join(attr_lines)
+                f"DAILY ATTRACTIONS (real places from the places provider, with their "
+                f"type in parentheses{area_note} — never invent a name not listed here, "
+                "and only slot a place into breakfast/lunch/dinner if its type is "
+                "restaurant, cafe, or food — a museum, landmark, or other non-food type "
+                "is a thing to do, never a meal stop):\n" + "\n".join(attr_lines)
             )
 
         shape = _INTENT_RESPONSE_SHAPES.get(
             intent, _INTENT_RESPONSE_SHAPES[ChatIntent.GENERAL_CHAT]
         )
-        sections.append(
-            "RESPONSE GUIDELINES:\n"
-            "- Open with the answer itself. The first word must be part of the answer — "
-            "never a greeting, never the user's name for what they asked. Banned openings: "
-            "'Hey', 'Hi', 'Great question', 'Sure', 'Absolutely', 'Let me', 'I'd be happy "
-            "to', 'Your trip is shaping up'.\n"
-            "- Hard limit: 3 sentences. Most answers need two. Stop at the answer; do not "
-            "add a closing thought, a well-wish or an offer to help further.\n"
-            "- Do not restate the trip's score, confidence, best/watch-out days, full "
-            "packing list or day-by-day breakdown unless the user asked for that specific "
-            "thing — the interface already shows all of it beside your reply, and "
-            "repeating it is noise.\n"
-            "- Name at most two or three places, and only ones listed above.\n"
-            "- Only mention attractions and weather facts that appear above — never invent "
-            "one. If something was not provided, say so plainly in one clause.\n"
-            "- Give a reason only when it changes what the user would do, in the same "
-            "sentence rather than a separate paragraph.\n"
-            "- Professional and direct, like a planner who respects the reader's time. "
-            "No recap of the question, no sign-off, no exclamation marks.\n"
-            f"- Match the answer to what was asked: {shape}\n"
-            "- Do NOT output JSON, markdown headings or bullet lists — just natural text"
+        always_rules = (
+            "- Talk like a well-traveled friend giving advice over text, not a formal "
+            "report — warm and casual, the way you'd naturally reply to someone. "
+            "Contractions are fine, a little personality is fine, an exclamation point here "
+            "and there is fine. Skip pure filler that adds nothing ('Great question!', "
+            "'I'd be happy to help!'), but a natural, friendly opening is welcome — you "
+            "don't need to open with the bare fact like a database dump.\n"
+            "- Places, packing items, and weather/trip numbers must only ever be ones that "
+            "actually appear above — never invent or add one of your own, even a small, "
+            "plausible-sounding extra like a spare packing item. If something specific "
+            "wasn't provided, say so plainly in passing — but never refuse or apologize "
+            "when the data above already answers the question; declining when the answer "
+            "is right there is worse than a short one. General travel knowledge about the "
+            "destination itself (well-known local dishes, what a region is famous for) is "
+            "fine to mention as color, since that's common knowledge about the place, not "
+            "a claim about specific computed data — but keep it general to the destination, "
+            "never attributed to one of the specific real venues above. You have no menu, "
+            "hours, or review data for any listed place, so never say what a named "
+            "restaurant serves, claim a specific dish is 'their specialty' or 'a must-try "
+            "there', or invent why a specific place is good beyond its type and what's "
+            "generally nearby.\n"
+            "- When you mention a place, give it a little life — what its type suggests "
+            "about the experience (a museum is browsing exhibits, a cafe is a relaxed "
+            "sit-down), how it fits the day's weather, roughly where it falls in the day "
+            "— the way you'd tip off a friend, not just recite a name from a list. This is "
+            "color about the kind of place it is, never invented specifics about that one "
+            "venue (no menu items, no 'their famous X', no made-up backstory).\n"
+            f"- Match the answer to what was asked: {shape}"
         )
+        if wants_detail:
+            # The user explicitly asked for a checklist, a full itinerary, or
+            # "every day" (or the intent itself already implies wanting a
+            # full spread — itinerary/recommendation asks, not just a quick
+            # answer). Live-observed: forcing a packing "checklist" ask into
+            # 3 sentences with no lists produced an outright refusal, and a
+            # "3 restaurants a day" ask stayed capped at one place total.
+            sections.append(
+                "RESPONSE GUIDELINES:\n" + always_rules + "\n"
+                "- Give the full picture — every real place above that's relevant, with a "
+                "bit of color on each (what it's known for, what's nearby, why it fits). "
+                "Length should match what a genuinely useful answer needs, not be padded "
+                "or clipped short.\n"
+                "- A markdown list (one item, or one day, per line) works well for a "
+                "checklist or a day-by-day plan — use it when it makes the answer easier "
+                "to follow.\n"
+                "- Still never invent an item, place or fact not listed above."
+            )
+        else:
+            sections.append(
+                "RESPONSE GUIDELINES:\n" + always_rules + "\n"
+                "- Write however long feels natural for a real answer — often a short "
+                "paragraph, sometimes just a sentence or two if that's genuinely all it "
+                "takes. Don't pad it out with a closing well-wish or an offer to help "
+                "further, but don't clip it into a robotic fragment either.\n"
+                "- Do not restate the trip's score, confidence, best/watch-out days, full "
+                "packing list or day-by-day breakdown unless the user asked for that "
+                "specific thing — the interface already shows all of it beside your reply, "
+                "and repeating it is noise.\n"
+                "- A couple of places is usually plenty here — save the full rundown for "
+                "when they ask for one."
+            )
 
         return "\n\n".join(sections)
 
@@ -1255,11 +1663,18 @@ class ChatOrchestrator:
 
         if intelligence:
             ts = intelligence.trip_summary
-            lines.append(f"Trip suitability: {ts.trip_suitability_score}/100")
-            best = ", ".join(d.isoformat() for d in ts.best_days[:2])
-            lines.append(f"Best days: {best}")
-            packing = ", ".join(ts.overall_packing_list[:5])
-            lines.append(f"Packing: {packing}")
+            lines.append(
+                f"Trip suitability: {ts.trip_suitability_score}/100 "
+                f"({ts.overall_risk_level} risk)"
+            )
+            if ts.best_days:
+                best = ", ".join(d.isoformat() for d in ts.best_days[:2])
+                lines.append(f"Best days: {best}")
+            if ts.worst_days:
+                worst = ", ".join(d.isoformat() for d in ts.worst_days[:2])
+                lines.append(f"Watch out for: {worst}")
+            if ts.overall_packing_list:
+                lines.append(f"Packing: {', '.join(ts.overall_packing_list[:5])}")
             lines.append("")
 
         if attractions:
@@ -1267,7 +1682,9 @@ class ChatOrchestrator:
                 day_str = day_attr.date.strftime("%a %b %d")
                 day_places = day_attr.attractions[:_PLACES_PER_DAY_IN_RESPONSE]
                 names = ", ".join(a.name for a in day_places)
-                lines.append(f"{day_str}: {names}")
+                if names:
+                    lines.append(f"{day_str}: {names}")
+            lines.append("")
 
-        lines.append("\nLet me know if you'd like more details!")
-        return "\n".join(lines)
+        lines.append("Let me know if you'd like more details!")
+        return "\n".join(lines).strip()

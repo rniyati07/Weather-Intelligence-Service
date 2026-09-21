@@ -1,4 +1,12 @@
-import { Landmark, MapPin, TreePine, UtensilsCrossed, Waves } from 'lucide-react'
+import {
+  BedDouble,
+  Dumbbell,
+  Landmark,
+  MapPin,
+  TreePine,
+  UtensilsCrossed,
+  Waves,
+} from 'lucide-react'
 import type { ComponentType } from 'react'
 
 import type { ChatPlace } from '@/types'
@@ -22,6 +30,9 @@ const PLACE_ICONS: Record<string, ComponentType<{ className?: string }>> = {
   outdoor_activity: TreePine,
   hiking: TreePine,
   wildlife: TreePine,
+  hotel: BedDouble,
+  guest_house: BedDouble,
+  sports_facility: Dumbbell,
 }
 
 /** `weatherSuitability` is the engine's own verdict on the place for this

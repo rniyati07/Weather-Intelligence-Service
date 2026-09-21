@@ -13,6 +13,7 @@ import {
   createLocalMessage,
   latestPlaces,
   latestTripContext,
+  withLastResolvedDestination,
 } from '@/utils/chat'
 import { isActiveTrip, tripIdentity, tripLocationId } from '../active-trip'
 import { ChatComposer } from '../components/ChatComposer'
@@ -71,8 +72,12 @@ function ChatConversation({ conversationId }: { conversationId: string | null })
   // The trip as the backend last described it: the freshest `tripContext` any
   // turn carried, falling back to the conversation's own stored context when
   // the thread was restored from `GET /conversations/{id}` (whose messages
-  // carry no per-turn extras).
-  const trip = latestTripContext(messages) ?? parseTripContext(thread.data?.tripContext)
+  // carry no per-turn extras). `withLastResolvedDestination` then patches a
+  // transiently-cleared `destination` back in from an earlier turn this
+  // session, so a pending disambiguation doesn't tear down an already
+  // established trip's workspace (ISSUE-1).
+  const rawTrip = latestTripContext(messages) ?? parseTripContext(thread.data?.tripContext)
+  const trip = withLastResolvedDestination(rawTrip, messages)
 
   // The workspace is a property of the *trip*, never of the latest turn's
   // intent — a packing or weather question must not tear it down. It does

@@ -6,9 +6,12 @@ from app.infrastructure.providers.health import HealthTracker, ProviderStatus
 
 
 class TestPassiveUpdates:
-    def test_unknown_provider_defaults_to_available(self) -> None:
+    def test_never_called_provider_is_unknown_not_available(self) -> None:
+        """ISSUE-3 (E2E audit): a provider with no record has never actually
+        been probed — reporting it as `available` let an operator read a
+        never-exercised fallback as verified reachable."""
         tracker = HealthTracker(ttl_seconds=60)
-        assert tracker.status("open_meteo") == ProviderStatus.AVAILABLE
+        assert tracker.status("open_meteo") == ProviderStatus.UNKNOWN
 
     def test_success_marks_available(self) -> None:
         tracker = HealthTracker(ttl_seconds=60)

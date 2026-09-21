@@ -119,8 +119,37 @@ class OpenMeteoGeocoding(GeocodingPort):
         if not trimmed:
             return []
 
+        places = await self._search_once(trimmed, limit)
+        if places or "," in trimmed:
+            # A comma already separates the specific place from its region
+            # ("Varkala, Kerala") and Open-Meteo handles that shape natively
+            # — confirmed live: it returns Varkala either way. Only a bare
+            # space-separated miss needs the word-dropping fallback below.
+            return _rank_by_exactness(places, trimmed)
+
+        # Live-observed failure: "varkala kerala" (no comma) returns zero
+        # results from Open-Meteo even though "varkala" alone matches
+        # perfectly — its name search wants a single place name, not a
+        # "place + region" phrase without a separator. This is exactly how
+        # people naturally say a destination in conversation, so the
+        # extraction step cannot be relied on to always add the comma
+        # itself. Retry with the phrase trimmed one trailing word at a time
+        # — most specific first — rather than collapsing straight to the
+        # first word, which would risk matching the wrong place for a
+        # genuinely multi-word name ("Fort Kochi Kerala" should try "Fort
+        # Kochi" before "Fort").
+        words = trimmed.split()
+        for cut in range(len(words) - 1, 0, -1):
+            candidate = " ".join(words[:cut])
+            places = await self._search_once(candidate, limit)
+            if places:
+                return _rank_by_exactness(places, candidate)
+
+        return []
+
+    async def _search_once(self, name: str, limit: int) -> list[GeocodedPlace]:
         params: dict[str, str | int] = {
-            "name": trimmed,
+            "name": name,
             "count": limit,
             "language": "en",
             "format": "json",
@@ -156,12 +185,11 @@ class OpenMeteoGeocoding(GeocodingPort):
         if not isinstance(results, list):
             raise GeocodingUnavailableError(f"[{self.name}] unexpected 'results' shape")
 
-        places = [
+        return [
             place
             for place in (_to_place(raw) for raw in results if isinstance(raw, dict))
             if place is not None
         ]
-        return _rank_by_exactness(places, trimmed)
 
     async def aclose(self) -> None:
         """Close the HTTP client this adapter was constructed with."""

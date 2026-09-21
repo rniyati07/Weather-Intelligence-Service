@@ -38,6 +38,13 @@ class NormalizedReading:
     (`precipitation_mm`, `humidity`) present on this reading — it feeds
     `travelConfidence` in Phase 7. `source_class` records whether this came
     from a forecast or historical provider.
+
+    The fields below `humidity` are presentation-only enrichment (real
+    provider data, not derived) — deliberately excluded from
+    `completeness`/`travelConfidence`, which stay fixed to exactly the two
+    fields the confidence formula was designed and tested around. A provider
+    that doesn't supply one just leaves it `None`, same as `humidity` always
+    could.
     """
 
     date: date
@@ -50,3 +57,9 @@ class NormalizedReading:
     source_class: SourceClass
     precipitation_mm: float | None = None
     humidity: float | None = None
+    feels_like_max_c: float | None = None
+    feels_like_min_c: float | None = None
+    uv_index_max: float | None = None
+    wind_gust_kph: float | None = None
+    sunrise: str | None = None
+    sunset: str | None = None

@@ -53,8 +53,33 @@ class TestCompleteContextClassifiesByKeyword:
             ChatIntent.RECOMMENDATION_REQUEST
         )
 
+    def test_which_day_is_best_is_a_weather_question(self) -> None:
+        """This product's own canonical example question (PRD, README) —
+        found live falling through to GENERAL_CHAT on the fallback path
+        (LLM call failed, e.g. rate-limited) because no keyword list
+        matched it at all."""
+        assert classify_intent("Which day is best?", COMPLETE) == ChatIntent.WEATHER_QUESTION
+        assert classify_intent("what's the worst day?", COMPLETE) == ChatIntent.WEATHER_QUESTION
+
     def test_no_keyword_match_is_general_chat(self) -> None:
         assert classify_intent("thanks, this is great", COMPLETE) == ChatIntent.GENERAL_CHAT
+
+    def test_sports_and_stays_are_recommendation_requests(self) -> None:
+        """Live-observed: the Phase 1/2 stays/sports categories were wired
+        into `_interests_to_attraction_types`'s mapping but not into this
+        fallback's own keyword list, so "what about sports to do" fell
+        through every list straight to GENERAL_CHAT whenever Gemini's own
+        classification was unavailable — the same failure mode as the
+        "which day is best" case above, for a different keyword list."""
+        assert classify_intent("what about sports or something active to do", COMPLETE) == (
+            ChatIntent.RECOMMENDATION_REQUEST
+        )
+        assert classify_intent("any good hotels near the city center", COMPLETE) == (
+            ChatIntent.RECOMMENDATION_REQUEST
+        )
+        assert classify_intent("is there a tennis court nearby", COMPLETE) == (
+            ChatIntent.RECOMMENDATION_REQUEST
+        )
 
     def test_case_insensitive(self) -> None:
         assert classify_intent("BEACHES please", COMPLETE) == ChatIntent.RECOMMENDATION_REQUEST

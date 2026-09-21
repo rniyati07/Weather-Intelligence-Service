@@ -591,7 +591,7 @@ All objects below are provider-independent. Types: `string`, `number` (decimal),
 | **`RiskFactorType`** | `heat`, `cold`, `rain`, `storm`, `wind` | Category of a contributing risk factor (v1 taxonomy; config-defined, extensible additively). |
 | **`WeatherCondition`** | `clear`, `partly_cloudy`, `cloudy`, `rain`, `heavy_rain`, `thunderstorm`, `snow`, `fog` | Normalized internal condition vocabulary (provider codes map into this set). |
 | **`CacheStatus`** | `hit`, `miss`, `stale` | Freshness of the served data. |
-| **`ProviderStatus`** | `available`, `degraded`, `unavailable` | Operational provider state (`/providers/health` only). |
+| **`ProviderStatus`** | `available`, `degraded`, `unavailable`, `unknown` | Operational provider state (`/providers/health` only). `unknown` — added post-launch, additive per §12 — means never actually probed; distinct from `available`, which means "no recorded failure since it was last actually called." |
 | **`ErrorCode`** | `VALIDATION_ERROR`, `AUTHENTICATION_ERROR`, `AUTHORIZATION_ERROR`, `NOT_FOUND`, `RATE_LIMITED`, `PROVIDER_UNAVAILABLE`, `UPSTREAM_TIMEOUT`, `SERVICE_DEGRADED`, `INTERNAL_ERROR` | Machine-readable error codes (§7). |
 
 **Consumer guidance:** treat all enums as **open** for forward compatibility — a client must tolerate an unrecognized value (e.g., a new `WeatherCondition`) without failing (§12, §15).

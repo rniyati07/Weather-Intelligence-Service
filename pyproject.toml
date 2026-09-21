@@ -24,6 +24,11 @@ dependencies = [
   "structlog",
   "pyyaml",
   "jinja2",
+  # `zoneinfo` (stdlib) has no IANA database of its own on Windows, and not
+  # every minimal Linux base image ships one either — `tzdata` is the
+  # official, portable fallback source Python's own docs recommend
+  # depending on explicitly rather than assuming the host OS provides one.
+  "tzdata",
 ]
 
 [project.optional-dependencies]
@@ -59,4 +64,11 @@ mypy_path = "app"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
-addopts = "-ra"
+# `not live` by default: the `live` suite (tests/live/) makes real calls to
+# Groq, Open-Meteo, and Overpass against a real local database — it must
+# never run in CI or an ordinary `pytest`. Run it explicitly with
+# `pytest -m live tests/live` once `.env` has real credentials configured.
+addopts = "-ra -m \"not live\""
+markers = [
+  "live: hits real external services (Groq/Open-Meteo/Overpass) and a real database; excluded by default, see tests/live/README.md",
+]

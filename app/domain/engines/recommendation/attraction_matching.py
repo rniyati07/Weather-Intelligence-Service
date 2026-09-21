@@ -51,6 +51,15 @@ _ATTRACTION_TO_ACTIVITY: dict[AttractionType, ActivityCategory] = {
     AttractionType.FAMILY: "outdoor_sightseeing",
     AttractionType.PHOTOGRAPHY: "outdoor_sightseeing",
     AttractionType.HIKING: "outdoor_sightseeing",
+    # A stay is a weather-shielded place, same category weight as an indoor
+    # activity — not "beach"/"outdoor_sightseeing", which would tie a hotel's
+    # suitability to conditions it isn't actually exposed to.
+    AttractionType.HOTEL: "indoor_museum",
+    AttractionType.GUEST_HOUSE: "indoor_museum",
+    # Most `SPORTS_FACILITY` OSM tags (pitch, golf_course, stadium,
+    # sports_centre) are outdoor venues; `WATER_SPORTS`/`HIKING`/`ADVENTURE`
+    # already cover the sport categories that aren't.
+    AttractionType.SPORTS_FACILITY: "outdoor_sightseeing",
 }
 
 #: Score-to-band thresholds. First threshold the score clears, high to low,

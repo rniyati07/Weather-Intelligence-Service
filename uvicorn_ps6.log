@@ -1,0 +1,34 @@
+2026-09-20T13:27:11.038691Z [info     ] request_handled                duration_ms=17.8 method=GET path=/health request_id=req_0e4fb66e status_code=200
+INFO:     127.0.0.1:49684 - "GET /health HTTP/1.1" 200 OK
+HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: GET https://api.open-meteo.com/v1/forecast?latitude=15.2993&longitude=74.124&start_date=2026-09-30&end_date=2026-10-04&daily=temperature_2m_max%2Ctemperature_2m_min%2Cprecipitation_sum%2Cprecipitation_probability_max%2Cwindspeed_10m_max%2Cweathercode&timezone=UTC "HTTP/1.1 200 OK"
+HTTP Request: POST https://overpass-api.de/api/interpreter "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-09-20T13:27:21.264626Z [info     ] request_handled                duration_ms=5785.44 method=POST path=/api/v1/conversations/chat request_id=req_0ba5b91f status_code=200
+INFO:     127.0.0.1:49713 - "POST /api/v1/conversations/chat HTTP/1.1" 200 OK
+HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://overpass-api.de/api/interpreter "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-09-20T13:27:41.375357Z [info     ] request_handled                duration_ms=8389.41 method=POST path=/api/v1/conversations/chat request_id=req_607e71dd status_code=200
+INFO:     127.0.0.1:63919 - "POST /api/v1/conversations/chat HTTP/1.1" 200 OK
+2026-09-21T16:36:16.303610Z [info     ] request_handled                duration_ms=371.22 method=GET path=/api/v1/conversations request_id=req_f8c9b8fd status_code=200
+INFO:     127.0.0.1:53003 - "GET /api/v1/conversations HTTP/1.1" 200 OK
+2026-09-21T16:36:18.280417Z [info     ] request_handled                duration_ms=18.92 method=GET path=/api/v1/conversations/acdbe31d-f907-403d-93ea-30194e49f489 request_id=req_d1873ef8 status_code=200
+INFO:     127.0.0.1:53015 - "GET /api/v1/conversations/acdbe31d-f907-403d-93ea-30194e49f489 HTTP/1.1" 200 OK
+HTTP Request: GET https://api.open-meteo.com/v1/forecast?latitude=15.2993&longitude=74.124&start_date=2026-09-30&end_date=2026-10-04&daily=temperature_2m_max%2Ctemperature_2m_min%2Cprecipitation_sum%2Cprecipitation_probability_max%2Cwindspeed_10m_max%2Cweathercode&timezone=UTC "HTTP/1.1 200 OK"
+2026-09-21T16:36:19.210380Z [info     ] request_handled                duration_ms=891.95 method=GET path=/api/v1/locations/15.2993,74.1240/intelligence request_id=req_a325cd6e status_code=200
+INFO:     127.0.0.1:53017 - "GET /api/v1/locations/15.2993%2C74.1240/intelligence?startDate=2026-09-30&endDate=2026-10-04 HTTP/1.1" 200 OK
+HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://overpass-api.de/api/interpreter "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-09-21T16:36:55.945746Z [info     ] request_handled                duration_ms=8390.56 method=POST path=/api/v1/conversations/chat request_id=req_90c8f432 status_code=200
+INFO:     127.0.0.1:65259 - "POST /api/v1/conversations/chat HTTP/1.1" 200 OK
+2026-09-21T16:36:56.000407Z [info     ] request_handled                duration_ms=41.13 method=GET path=/api/v1/conversations request_id=req_3769648f status_code=200
+INFO:     127.0.0.1:56450 - "GET /api/v1/conversations HTTP/1.1" 200 OK
+HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://overpass-api.de/api/interpreter "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-09-21T16:37:37.823633Z [info     ] request_handled                duration_ms=13633.0 method=POST path=/api/v1/conversations/chat request_id=req_aa6a446e status_code=200
+INFO:     127.0.0.1:58460 - "POST /api/v1/conversations/chat HTTP/1.1" 200 OK
+2026-09-21T16:37:37.847479Z [info     ] request_handled                duration_ms=9.53 method=GET path=/api/v1/conversations request_id=req_cfad9998 status_code=200
+INFO:     127.0.0.1:63760 - "GET /api/v1/conversations HTTP/1.1" 200 OK

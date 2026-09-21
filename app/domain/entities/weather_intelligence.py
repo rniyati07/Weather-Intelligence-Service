@@ -41,13 +41,26 @@ class Period:
 
 @dataclass(frozen=True, slots=True)
 class DailySummary:
-    """API Spec §9.4.1."""
+    """API Spec §9.4.1.
+
+    The fields from `humidity` down are additive enrichment carried straight
+    through from `NormalizedReading` — real provider data, presentation
+    only, never fed into risk/scoring/confidence. A provider that doesn't
+    supply one leaves it `None`.
+    """
 
     temp_min_c: float
     temp_max_c: float
     precipitation_probability: float
     wind_speed_kph: float
     condition: WeatherCondition
+    humidity: float | None = None
+    feels_like_max_c: float | None = None
+    feels_like_min_c: float | None = None
+    uv_index_max: float | None = None
+    wind_gust_kph: float | None = None
+    sunrise: str | None = None
+    sunset: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -187,6 +200,13 @@ def build_weather_intelligence(
                     precipitation_probability=reading.precipitation_probability,
                     wind_speed_kph=reading.wind_speed_kph,
                     condition=reading.condition,
+                    humidity=reading.humidity,
+                    feels_like_max_c=reading.feels_like_max_c,
+                    feels_like_min_c=reading.feels_like_min_c,
+                    uv_index_max=reading.uv_index_max,
+                    wind_gust_kph=reading.wind_gust_kph,
+                    sunrise=reading.sunrise,
+                    sunset=reading.sunset,
                 ),
                 risk_assessment=risk_assessment,
                 activity_suitability=scoring.score_activities(triggered, rule_config),

@@ -292,20 +292,25 @@ class FakeLlmClient:
     chat_response: str = "Sounds like a wonderful trip! Pack light and enjoy the sunshine."
     raise_on_extraction: Exception | None = None
     raise_on_chat: Exception | None = None
-    calls: list[tuple[str, str, bool]] = field(default_factory=list)
+    calls: list[tuple[str, str, bool, float | None]] = field(default_factory=list)
 
     @property
     def model(self) -> str:
         return "fake-model"
 
     async def complete(
-        self, *, system_prompt: str, user_content: str, json_mode: bool = False
+        self,
+        *,
+        system_prompt: str,
+        user_content: str,
+        json_mode: bool = False,
+        temperature: float | None = None,
     ) -> str:
         # `json_mode` is exactly how the real orchestrator distinguishes the
         # two calls (extraction always passes it; response generation never
         # does) — matching on that instead of prompt text means this fake
         # never goes stale when the prompt wording changes.
-        self.calls.append((system_prompt, user_content, json_mode))
+        self.calls.append((system_prompt, user_content, json_mode, temperature))
         if json_mode:
             if self.raise_on_extraction is not None:
                 raise self.raise_on_extraction
@@ -316,11 +321,11 @@ class FakeLlmClient:
 
     @property
     def extraction_call_count(self) -> int:
-        return sum(1 for _, _, json_mode in self.calls if json_mode)
+        return sum(1 for _, _, json_mode, _ in self.calls if json_mode)
 
     @property
     def chat_call_count(self) -> int:
-        return sum(1 for _, _, json_mode in self.calls if not json_mode)
+        return sum(1 for _, _, json_mode, _ in self.calls if not json_mode)
 
 
 @pytest.fixture

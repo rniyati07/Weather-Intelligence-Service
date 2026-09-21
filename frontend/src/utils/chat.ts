@@ -204,6 +204,41 @@ export function latestTripContext(messages: ChatMessage[]): TripContextPayload |
  * treated as "still this trip" — the conversation is the trip's, and the
  * caller already scopes it to the conversation being viewed.
  */
+/**
+ * `trip` with a still-missing `destination` patched in from the most recent
+ * turn that had one.
+ *
+ * The backend deliberately clears `destination` when a newly-mentioned
+ * destination is ambiguous, so the next turn's `tripContext` looks
+ * indistinguishable from "no trip ever established" unless something looks
+ * back. Without this, an established trip's entire workspace (identity,
+ * outlook, days, places, packing) disappears the instant the user names an
+ * ambiguous destination mid-conversation, even though every other field
+ * (dates, interests, style, pace) — and the conversation itself — is untouched.
+ *
+ * Only the `destination` field is patched; every other field already reflects
+ * the latest turn. If no prior turn ever resolved a destination, `trip` is
+ * returned unchanged, so a conversation that never established a trip still
+ * correctly renders as no-active-trip.
+ */
+export function withLastResolvedDestination(
+  trip: TripContextPayload,
+  messages: ChatMessage[],
+): TripContextPayload {
+  if (trip.destination) return trip
+
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index]
+    if (!message || message.role !== 'assistant') continue
+    const raw = getMessageTripContext(message)
+    if (!raw) continue
+    const destination = parseTripContext(raw).destination
+    if (destination) return { ...trip, destination }
+  }
+
+  return trip
+}
+
 export function latestPlaces(messages: ChatMessage[], tripKey: string | null): ChatPlace[] {
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const message = messages[index]

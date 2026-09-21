@@ -127,6 +127,13 @@ class TestGetIntelligence:
             "precipitationProbability",
             "windSpeedKph",
             "condition",
+            "humidity",
+            "feelsLikeMaxC",
+            "feelsLikeMinC",
+            "uvIndexMax",
+            "windGustKph",
+            "sunrise",
+            "sunset",
         }
         trip = data["tripSummary"]
         assert set(trip) == {

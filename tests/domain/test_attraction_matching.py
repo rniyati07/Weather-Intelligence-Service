@@ -154,6 +154,42 @@ class TestBuildAttractionRecommendation:
         assert all(day.attractions == () for day in result.daily)
 
 
+class TestNewAttractionCategories:
+    """Stays and sports facilities reuse the existing 3-bucket suitability
+    system (no new `ActivityCategory`) — a hotel scores exactly like a museum,
+    and a sports facility exactly like a landmark, on the same day."""
+
+    def test_hotel_and_guest_house_score_like_an_indoor_activity(
+        self, rule_config: RuleConfig
+    ) -> None:
+        intelligence = _intelligence(rule_config, stormy=True)
+        day = intelligence.daily_intelligence[0]
+        places = [
+            _place("City Museum", AttractionType.MUSEUM, "museum-1"),
+            _place("Seaside Hotel", AttractionType.HOTEL, "hotel-1"),
+            _place("Backpacker Guest House", AttractionType.GUEST_HOUSE, "guest-1"),
+        ]
+
+        ranked = {p.name: p.weather_suitability for p in rank_places_for_day(day, places)}
+
+        assert ranked["Seaside Hotel"] == ranked["City Museum"]
+        assert ranked["Backpacker Guest House"] == ranked["City Museum"]
+
+    def test_sports_facility_scores_like_an_outdoor_activity(
+        self, rule_config: RuleConfig
+    ) -> None:
+        intelligence = _intelligence(rule_config, stormy=False)
+        day = intelligence.daily_intelligence[0]
+        places = [
+            _place("City Landmark", AttractionType.LANDMARK, "landmark-1"),
+            _place("Town Sports Centre", AttractionType.SPORTS_FACILITY, "sports-1"),
+        ]
+
+        ranked = {p.name: p.weather_suitability for p in rank_places_for_day(day, places)}
+
+        assert ranked["Town Sports Centre"] == ranked["City Landmark"]
+
+
 class TestCategoriesByFrequency:
     def test_counts_by_category(self) -> None:
         places = [

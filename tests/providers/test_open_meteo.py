@@ -52,6 +52,55 @@ class TestFetch:
         assert clear.precipitation_probability == pytest.approx(0.05)
 
     @respx.mock
+    async def test_new_real_fields_are_parsed_and_humidity_is_populated(
+        self, adapter: OpenMeteoAdapter
+    ) -> None:
+        """Live-verified against the real Open-Meteo API: these fields are
+        genuinely available, free, keyless, alongside the ones already
+        fetched — `humidity` had been hardcoded `None` for every Open-Meteo
+        reading despite `relative_humidity_2m_max` being real, fetchable
+        data the whole time."""
+        enriched = json.loads(json.dumps(_FIXTURE))
+        enriched["daily"]["apparent_temperature_max"] = [38.8, 33.0]
+        enriched["daily"]["apparent_temperature_min"] = [28.0, 24.0]
+        enriched["daily"]["uv_index_max"] = [9.3, 6.1]
+        enriched["daily"]["windgusts_10m_max"] = [22.7, 15.0]
+        enriched["daily"]["relative_humidity_2m_max"] = [99, 70]
+        enriched["daily"]["sunrise"] = ["2026-08-01T00:53", "2026-08-02T00:53"]
+        enriched["daily"]["sunset"] = ["2026-08-01T12:53", "2026-08-02T12:52"]
+        respx.get(open_meteo._BASE_URL).mock(return_value=httpx.Response(200, json=enriched))
+
+        readings = await adapter.fetch(15.25, 74.125, date(2026, 8, 1), date(2026, 8, 2))
+
+        rainy, _ = readings
+        assert rainy.feels_like_max_c == pytest.approx(38.8)
+        assert rainy.feels_like_min_c == pytest.approx(28.0)
+        assert rainy.uv_index_max == pytest.approx(9.3)
+        assert rainy.wind_gust_kph == pytest.approx(22.7)
+        assert rainy.sunrise == "2026-08-01T00:53"
+        assert rainy.sunset == "2026-08-01T12:53"
+        assert rainy.humidity == pytest.approx(0.99)  # converted from 99% to a 0.0-1.0 fraction
+        # precipitation_mm AND humidity both present now.
+        assert rainy.completeness == pytest.approx(1.0)
+
+    @respx.mock
+    async def test_missing_new_fields_degrade_to_none_not_an_error(
+        self, adapter: OpenMeteoAdapter
+    ) -> None:
+        """The original fixture has none of the new fields — every adapter
+        response, old or new, must still parse cleanly."""
+        respx.get(open_meteo._BASE_URL).mock(return_value=httpx.Response(200, json=_FIXTURE))
+
+        readings = await adapter.fetch(15.25, 74.125, date(2026, 8, 1), date(2026, 8, 2))
+
+        rainy, _ = readings
+        assert rainy.feels_like_max_c is None
+        assert rainy.uv_index_max is None
+        assert rainy.wind_gust_kph is None
+        assert rainy.sunrise is None
+        assert rainy.sunset is None
+
+    @respx.mock
     async def test_invalid_reading_is_dropped_not_fabricated(
         self, adapter: OpenMeteoAdapter
     ) -> None:
