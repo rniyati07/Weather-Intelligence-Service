@@ -1,6 +1,7 @@
 import {
   BedDouble,
   Dumbbell,
+  ExternalLink,
   Landmark,
   MapPin,
   TreePine,
@@ -11,6 +12,7 @@ import type { ComponentType } from 'react'
 
 import type { ChatPlace } from '@/types'
 import { titleCaseSlug } from '@/utils/format'
+import { getPlaceMapsUrl } from '@/utils/places'
 import { cn } from '@/lib/utils'
 
 /** Best-effort, mirroring the backend's own OSM tag mapping: a reasonable icon
@@ -66,6 +68,11 @@ function sharedReason(places: ChatPlace[]): string | null {
  *
  * Never rendered from prose, never invented, and never shown as an empty
  * section: an empty `places[]` renders nothing at all.
+ *
+ * Each row is a link to the place's Google Maps location (`getPlaceMapsUrl`)
+ * — the provider carries no website field, so a maps lookup built from the
+ * coordinates/address the backend already returned is the one honest,
+ * always-available "go explore this further" destination, never a guessed URL.
  */
 export function PlaceList({ places, className }: PlaceListProps) {
   if (places.length === 0) return null
@@ -84,46 +91,61 @@ export function PlaceList({ places, className }: PlaceListProps) {
           return (
             <li
               key={`${place.name}-${String(index)}`}
-              className="flex gap-3 border-b border-border py-3 last:border-b-0"
+              className="border-b border-border last:border-b-0"
             >
-              <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
-                <Icon className="size-4" />
-              </span>
-
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-body font-medium text-heading">{place.name}</p>
-                <p className="text-body-sm text-muted-foreground">{titleCaseSlug(place.type)}</p>
-
-                {/* Only when it actually differs per place — an identical note
-                  across the list is already shown once, above. */}
-                {place.reason && !shared ? (
-                  <p
-                    className={cn(
-                      'mt-0.5 text-body-sm',
-                      SUITABILITY_CLASSES[place.weatherSuitability] ?? 'text-muted-foreground',
-                    )}
-                  >
-                    {place.reason}
-                  </p>
-                ) : null}
-
-                {place.address ? (
-                  <p className="mt-0.5 truncate text-caption text-subtle-foreground">
-                    {place.address}
-                  </p>
-                ) : null}
-              </div>
-
-              {/* The engine's own verdict on this place for this trip's weather,
-                kept as a compact cue so the row stays scannable. */}
-              <span
-                className={cn(
-                  'mt-0.5 shrink-0 text-caption font-medium',
-                  SUITABILITY_CLASSES[place.weatherSuitability] ?? 'text-muted-foreground',
-                )}
+              <a
+                href={getPlaceMapsUrl(place)}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="group flex gap-3 rounded-md py-3 transition-colors hover:bg-muted focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
               >
-                {titleCaseSlug(place.weatherSuitability)}
-              </span>
+                <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
+                  <Icon className="size-4" />
+                </span>
+
+                <div className="min-w-0 flex-1">
+                  <p className="flex items-center gap-1.5 truncate text-body font-medium text-heading">
+                    {place.name}
+                    <ExternalLink
+                      className="size-3 shrink-0 text-subtle-foreground opacity-0 transition-opacity group-hover:opacity-100"
+                      aria-hidden="true"
+                    />
+                  </p>
+                  <p className="text-body-sm text-muted-foreground">{titleCaseSlug(place.type)}</p>
+
+                  {/* Only when it actually differs per place — an identical note
+                    across the list is already shown once, above. */}
+                  {place.reason && !shared ? (
+                    <p
+                      className={cn(
+                        'mt-0.5 text-body-sm',
+                        SUITABILITY_CLASSES[place.weatherSuitability] ?? 'text-muted-foreground',
+                      )}
+                    >
+                      {place.reason}
+                    </p>
+                  ) : null}
+
+                  {place.address ? (
+                    <p className="mt-0.5 truncate text-caption text-subtle-foreground">
+                      {place.address}
+                    </p>
+                  ) : null}
+                </div>
+
+                {/* The engine's own verdict on this place for this trip's weather,
+                  kept as a compact cue so the row stays scannable. */}
+                <span
+                  className={cn(
+                    'mt-0.5 shrink-0 text-caption font-medium',
+                    SUITABILITY_CLASSES[place.weatherSuitability] ?? 'text-muted-foreground',
+                  )}
+                >
+                  {titleCaseSlug(place.weatherSuitability)}
+                </span>
+
+                <span className="sr-only"> — open in Google Maps</span>
+              </a>
             </li>
           )
         })}

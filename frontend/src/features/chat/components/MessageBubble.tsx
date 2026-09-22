@@ -1,7 +1,7 @@
 import { CloudSun } from 'lucide-react'
 
 import type { ChatMessage } from '@/types'
-import { getMessageLlmGenerated } from '@/utils/chat'
+import { getMessageLlmGenerated, getMessagePlaces } from '@/utils/chat'
 import { renderMessageText } from '@/utils/markdown'
 
 export interface MessageBubbleProps {
@@ -15,6 +15,14 @@ export interface MessageBubbleProps {
  * extraction, no derived labels. Every structured element that accompanies a
  * reply (trip outlook, day strip, places) is a sibling in the workspace,
  * never derived from this component.
+ *
+ * The one exception, and it isn't really one: `renderMessageText` is handed
+ * this turn's own `places[]` (`getMessagePlaces`) so it can turn a place name
+ * that appears in the prose or a table cell into a link to that same real
+ * place's Maps location. That's cross-referencing already-fetched structured
+ * data against text the model already wrote — the same grounding the
+ * sidebar's `PlaceList` already relies on — never inventing a fact, a name,
+ * or a URL that wasn't already real.
  *
  * The assistant turn is deliberately *not* a tinted, bordered container: a
  * reply is the page's primary reading, and wrapping every one in a coloured
@@ -37,6 +45,7 @@ export function MessageBubble({ message }: MessageBubbleProps) {
   }
 
   const llmGenerated = getMessageLlmGenerated(message)
+  const places = getMessagePlaces(message)
 
   return (
     <div className="flex items-start gap-3">
@@ -60,7 +69,7 @@ export function MessageBubble({ message }: MessageBubbleProps) {
         </p>
 
         <div className="mt-1.5 max-w-[68ch] text-body text-foreground [&_p+p]:mt-3 [&_strong]:font-semibold [&_strong]:text-heading">
-          {renderMessageText(message.content)}
+          {renderMessageText(message.content, places)}
         </div>
       </div>
     </div>

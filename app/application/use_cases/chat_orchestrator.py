@@ -1627,7 +1627,13 @@ class ChatOrchestrator:
                 "or clipped short.\n"
                 "- A markdown list (one item, or one day, per line) works well for a "
                 "checklist or a day-by-day plan — use it when it makes the answer easier "
-                "to follow.\n"
+                "to follow. For an actual packing checklist specifically, use task-list "
+                "syntax (`- [ ] item`) instead of a plain bullet — it renders as a real "
+                "checkbox. A markdown table is the clearest shape for a day-by-day "
+                "itinerary with more than one column of information (e.g. time, place, "
+                "why it fits). A short `> ` blockquote line works well for one standout "
+                "tip or watch-out you want to set apart from the rest of the answer — use "
+                "it sparingly, not for every sentence.\n"
                 "- Still never invent an item, place or fact not listed above."
             )
         else:

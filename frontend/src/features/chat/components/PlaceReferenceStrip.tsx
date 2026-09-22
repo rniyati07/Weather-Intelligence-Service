@@ -4,6 +4,7 @@ import type { ComponentType } from 'react'
 import { Tooltip } from '@/components/ui/tooltip'
 import type { ChatPlace } from '@/types'
 import { titleCaseSlug } from '@/utils/format'
+import { getPlaceMapsUrl } from '@/utils/places'
 
 /** Approximate, best-effort — the same spirit as the backend's own OSM tag
  * mapping (`attraction_matching.py`): a reasonable icon beats none, and an
@@ -37,6 +38,9 @@ export interface PlaceReferenceStripProps {
  *
  * Renders nothing when `places` is empty, rather than an empty section
  * (master prompt, "Places": "If places[] is empty → render no places area").
+ *
+ * Each chip opens the place's Google Maps location (`getPlaceMapsUrl`) — see
+ * `PlaceList`'s docstring for why maps, not a guessed website, is the link.
  */
 export function PlaceReferenceStrip({ places }: PlaceReferenceStripProps) {
   if (places.length === 0) return null
@@ -47,14 +51,19 @@ export function PlaceReferenceStrip({ places }: PlaceReferenceStripProps) {
         const Icon = PLACE_ICONS[place.type] ?? MapPin
         return (
           <li key={`${place.name}-${String(index)}`}>
-            <Tooltip content={place.reason}>
-              <span className="inline-flex max-w-[16rem] items-center gap-1.5 rounded-full border border-border bg-surface-raised px-3 py-1.5 text-body-sm text-foreground">
+            <Tooltip content={`${place.reason} — opens in Google Maps`}>
+              <a
+                href={getPlaceMapsUrl(place)}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex max-w-[16rem] items-center gap-1.5 rounded-full border border-border bg-surface-raised px-3 py-1.5 text-body-sm text-foreground transition-colors hover:border-primary hover:bg-primary-subtle focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
+              >
                 <Icon className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
                 <span className="truncate">{place.name}</span>
                 <span className="shrink-0 text-caption text-subtle-foreground">
                   {titleCaseSlug(place.type)}
                 </span>
-              </span>
+              </a>
             </Tooltip>
           </li>
         )
