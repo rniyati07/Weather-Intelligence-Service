@@ -225,6 +225,9 @@ class FakeAttractionProvider(AttractionPort):
         #: to assert a search-area override recentered the search without
         #: touching the conversation's real, persisted destination.
         self.calls_trip_context: list = []
+        #: The `preferred_types` each call actually received, in order — used
+        #: to assert a category search stayed narrow or widened as expected.
+        self.calls_preferred_types: list = []
         #: When set, returned verbatim regardless of the call's own
         #: `weather_intelligence` — lets a test script real `Attraction`s to
         #: assert on `ChatResult.places` without a real `PlacesPort`.
@@ -235,6 +238,7 @@ class FakeAttractionProvider(AttractionPort):
     ) -> AttractionRecommendation:
         self.call_count += 1
         self.calls_trip_context.append(trip_context)
+        self.calls_preferred_types.append(preferred_types)
         if self._recommendation is not None:
             return self._recommendation
         return AttractionRecommendation(

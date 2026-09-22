@@ -124,6 +124,51 @@ class TestRankPlacesForDay:
 
         assert first == second
 
+    def test_a_populous_category_does_not_crowd_out_a_sparse_one(
+        self, rule_config: RuleConfig
+    ) -> None:
+        """Live-observed: an itinerary that successfully fetched real
+        landmarks, viewpoints and sports facilities alongside food and
+        museums still showed food/museum exclusively. `_score_for` only ever
+        returns one of three bucket scores, so museum/restaurant/cultural
+        site (all "indoor_museum") routinely tie with each other — and a flat
+        sort by score let six same-scoring restaurants fill the whole day
+        ahead of two viewpoints and three landmarks ("outdoor_sightseeing")
+        that scored no worse, just belonged to a smaller category."""
+        intelligence = _intelligence(rule_config, stormy=False)
+        day = intelligence.daily_intelligence[0]
+        places = [
+            *(_place(f"Restaurant {i}", AttractionType.RESTAURANT, f"r-{i}") for i in range(6)),
+            _place("City Palace", AttractionType.LANDMARK, "landmark-1"),
+            _place("Sunset Point", AttractionType.VIEWPOINT, "viewpoint-1"),
+
+        ]
+
+        ranked = rank_places_for_day(day, places, limit=6)
+
+        types_present = {p.type for p in ranked}
+        assert AttractionType.LANDMARK in types_present
+        assert AttractionType.VIEWPOINT in types_present
+        assert AttractionType.RESTAURANT in types_present
+        # No single category took every slot even though restaurants
+        # outnumbered every other category among the candidates.
+        restaurant_count = sum(1 for p in ranked if p.type == AttractionType.RESTAURANT)
+        assert restaurant_count < 6
+
+    def test_still_fills_every_slot_when_one_category_has_enough_on_its_own(
+        self, rule_config: RuleConfig
+    ) -> None:
+        """The diversity guarantee must never mean *fewer* places than
+        available — with nothing else to round-robin against, a single
+        category with enough candidates still fills the day."""
+        intelligence = _intelligence(rule_config, stormy=False)
+        day = intelligence.daily_intelligence[0]
+        places = [_place(f"Beach {i}", AttractionType.BEACH, f"beach-{i}") for i in range(10)]
+
+        ranked = rank_places_for_day(day, places, limit=6)
+
+        assert len(ranked) == 6
+
 
 class TestBuildAttractionRecommendation:
     def test_one_daily_entry_per_forecast_day(self, rule_config: RuleConfig) -> None:

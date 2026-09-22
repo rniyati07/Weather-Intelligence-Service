@@ -1957,6 +1957,150 @@ class TestInterestsToAttractionTypes:
 
         assert types == (AttractionType.FOOD, AttractionType.RESTAURANT)
 
+    def test_itinerary_request_intent_widens_even_without_a_trigger_phrase(
+        self, conversation_repo, geocoding, intelligence_use_case, attraction_provider, llm_client
+    ):
+        """Live-observed regression, a second instance of the class of bug
+        the test above already guards: once "food" was recorded as an
+        interest, "give me a detailed itinerary" — no "things to do" or
+        "places to visit" phrasing, just the word "itinerary" — still stayed
+        scoped to restaurants only, because only specific trigger phrases
+        widened the search, never the `itinerary_request` intent itself,
+        even though an itinerary is inherently a whole-day ask."""
+        orchestrator = self._orchestrator(
+            conversation_repo, geocoding, intelligence_use_case, attraction_provider, llm_client
+        )
+
+        types = orchestrator._interests_to_attraction_types(
+            ("food",),
+            message="give me a detailed itinerary",
+            intent=ChatIntent.ITINERARY_REQUEST,
+        )
+
+        assert AttractionType.VIEWPOINT in types
+        assert AttractionType.LANDMARK in types
+        assert AttractionType.CULTURAL_SITE in types
+        assert AttractionType.SPORTS_FACILITY in types
+        # The explicitly-recorded interest is still honoured, on top of the
+        # broad spread — never replaced by it.
+        assert AttractionType.FOOD in types
+
+    async def test_first_turn_itinerary_ask_widens_the_category_search(
+        self, conversation_repo, geocoding, intelligence_use_case, attraction_provider, llm_client
+    ):
+        """Live-observed: "trip to Mumbai for 2 days, love food and museums,
+        give me a detailed itinerary" still returned only food/museum
+        places, even after `_interests_to_attraction_types` itself already
+        widened on `ITINERARY_REQUEST` intent — because the turn that
+        *establishes* a trip is always forced to `TRIP_PLANNING` intent
+        regardless of wording (`process_message`'s
+        `was_complete_before_this_turn` branch), so the intent-based check
+        never fired on this, the only turn a from-scratch itinerary ask like
+        this one gets. Only the phrase match on "itinerary" itself catches
+        it — this is the end-to-end path, not the unit-level check above."""
+        orchestrator = make_orchestrator(
+            conversation_repo=conversation_repo,
+            geocoding=geocoding,
+            intelligence_use_case=intelligence_use_case,
+            attraction_provider=attraction_provider,
+            llm_client=llm_client,
+        )
+        llm_client.extraction_response = (
+            f'{{"destination": "Goa", "startDate": "{_START_ISO}", "endDate": "{_END_ISO}", '
+            '"interests": ["food", "museums"]}'
+        )
+
+        await orchestrator.process_message(
+            conversation_id=None,
+            user_message=(
+                "trip to Goa for 4 days, love food and museums, "
+                "give me a detailed itinerary"
+            ),
+        )
+
+        types = attraction_provider.calls_preferred_types[-1]
+        assert AttractionType.VIEWPOINT in types
+        assert AttractionType.LANDMARK in types
+        assert AttractionType.CULTURAL_SITE in types
+        assert AttractionType.FOOD in types
+        assert AttractionType.MUSEUM in types
+
+    async def test_itinerary_ask_still_widens_after_a_disambiguation_reply(
+        self, conversation_repo, intelligence_use_case, attraction_provider, llm_client
+    ):
+        """Live-observed: "Udaipur, Rajasthan, love food and museums, give me
+        a detailed itinerary" resolves to an ambiguous destination (several
+        real Rajasthan towns are all named Udaipur), so the places search
+        that actually runs happens on the *next* turn — the disambiguation
+        reply ("1") — whose own text carries none of the original "detailed
+        itinerary" wording. `_recent_user_text` looking back past just the
+        current turn is what keeps this from silently narrowing back to
+        food/museums only, the same failure mode as the from-scratch test
+        above, one step later."""
+        udaipur_rajasthan = GeocodedPlace(
+            name="Udaipur",
+            latitude=24.58584,
+            longitude=73.71346,
+            country="India",
+            country_code="IN",
+            admin1="Rajasthan, Udaipur District",
+        )
+        udaipur_tripura = GeocodedPlace(
+            name="Udaipur",
+            latitude=23.53333,
+            longitude=91.48333,
+            country="India",
+            country_code="IN",
+            admin1="Tripura, Gomati",
+        )
+        geocoding = FakeGeocoding(results={"udaipur": [udaipur_rajasthan, udaipur_tripura]})
+        orchestrator = make_orchestrator(
+            conversation_repo=conversation_repo,
+            geocoding=geocoding,
+            intelligence_use_case=intelligence_use_case,
+            attraction_provider=attraction_provider,
+            llm_client=llm_client,
+        )
+        llm_client.extraction_response = (
+            '{"destination": "Udaipur", '
+            f'"startDate": "{_START_ISO}", "endDate": "{_END_ISO}", '
+            '"interests": ["food", "museums"]}'
+        )
+        first = await orchestrator.process_message(
+            conversation_id=None,
+            user_message=(
+                "Udaipur, love food and museums, give me a detailed itinerary"
+            ),
+        )
+        assert first.destination_candidates  # confirms the ambiguity actually fired
+
+        llm_client.extraction_response = "{}"
+        await orchestrator.process_message(
+            conversation_id=first.conversation.id, user_message="1"
+        )
+
+        types = attraction_provider.calls_preferred_types[-1]
+        assert AttractionType.VIEWPOINT in types
+        assert AttractionType.LANDMARK in types
+
+    def test_non_itinerary_intent_does_not_widen_on_its_own(
+        self, conversation_repo, geocoding, intelligence_use_case, attraction_provider, llm_client
+    ):
+        """Only `itinerary_request` gets the unconditional widening — a
+        recommendation ask for one category (e.g. "recommend restaurants")
+        must stay narrow, matching what was actually asked for."""
+        orchestrator = self._orchestrator(
+            conversation_repo, geocoding, intelligence_use_case, attraction_provider, llm_client
+        )
+
+        types = orchestrator._interests_to_attraction_types(
+            ("food",),
+            message="recommend some restaurants",
+            intent=ChatIntent.RECOMMENDATION_REQUEST,
+        )
+
+        assert types == (AttractionType.FOOD, AttractionType.RESTAURANT)
+
 
 class TestWantsDetailedResponse:
     """Live-observed regression: a user who explicitly asks for a packing

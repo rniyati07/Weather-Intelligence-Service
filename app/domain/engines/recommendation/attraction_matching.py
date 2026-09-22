@@ -115,6 +115,23 @@ def _best_time(day: DailyIntelligence) -> str | None:
     return None
 
 
+def _to_attraction(day: DailyIntelligence, place: RawPlace, score: int) -> Attraction:
+    return Attraction(
+        id=place.source_id,
+        name=place.name,
+        type=place.category,
+        description=f"{place.name}, a {place.category.value.replace('_', ' ')} near "
+        f"{day.date.strftime('%b %d')}'s route.",
+        latitude=place.latitude,
+        longitude=place.longitude,
+        address=place.address,
+        weather_suitability=_band_score(score),
+        weather_notes=_weather_note(day, score),
+        best_time=_best_time(day),
+        tags=place.tags,
+    )
+
+
 def rank_places_for_day(
     day: DailyIntelligence,
     places: list[RawPlace],
@@ -125,6 +142,21 @@ def rank_places_for_day(
 
     Pure: same `day` and `places` always produce the same ranked list. Ties
     break on name for a stable, reproducible order.
+
+    Grouped round-robin by `AttractionType`, not a flat sort by score —
+    live-observed: `_score_for` only ever returns one of three bucket scores
+    (`_ATTRACTION_TO_ACTIVITY` maps nineteen types onto three), so a flat
+    sort routinely ties many *different* categories together, and a category
+    with more candidate places (say six sports facilities) then fills the
+    entire day ahead of a category with fewer (two viewpoints, three
+    landmarks) purely because it has more entries at the same score — not
+    because it scored any better. An itinerary that successfully fetched
+    real landmarks, viewpoints and sports facilities alongside food and
+    museums still showed food/museum exclusively for exactly this reason.
+    Visiting each category once per round, best-scoring categories first,
+    means every category with any candidates left gets a fair turn before a
+    populous one gets a second place — the fetch already did the work of
+    finding a spread; the ranking must not throw it away.
     """
     scored: list[tuple[int, RawPlace]] = []
     for place in places:
@@ -132,26 +164,36 @@ def rank_places_for_day(
         score = _score_for(day, activity) if activity else 50
         scored.append((score, place))
 
-    scored.sort(key=lambda pair: (-pair[0], pair[1].name))
+    groups: dict[AttractionType, list[tuple[int, RawPlace]]] = defaultdict(list)
+    for score, place in scored:
+        groups[place.category].append((score, place))
+    for group in groups.values():
+        group.sort(key=lambda pair: (-pair[0], pair[1].name))
 
-    attractions = []
-    for score, place in scored[:limit]:
-        attractions.append(
-            Attraction(
-                id=place.source_id,
-                name=place.name,
-                type=place.category,
-                description=f"{place.name}, a {place.category.value.replace('_', ' ')} near "
-                f"{day.date.strftime('%b %d')}'s route.",
-                latitude=place.latitude,
-                longitude=place.longitude,
-                address=place.address,
-                weather_suitability=_band_score(score),
-                weather_notes=_weather_note(day, score),
-                best_time=_best_time(day),
-                tags=place.tags,
-            )
-        )
+    # Categories visited best-score-first each round; a category name breaks
+    # a tie between two categories whose best candidate scored the same.
+    ordered_categories = sorted(
+        groups, key=lambda category: (-groups[category][0][0], category.value)
+    )
+
+    attractions: list[Attraction] = []
+    cursors = dict.fromkeys(ordered_categories, 0)
+    while len(attractions) < limit:
+        placed_this_round = False
+        for category in ordered_categories:
+            if len(attractions) >= limit:
+                break
+            cursor = cursors[category]
+            group = groups[category]
+            if cursor >= len(group):
+                continue
+            score, place = group[cursor]
+            cursors[category] = cursor + 1
+            attractions.append(_to_attraction(day, place, score))
+            placed_this_round = True
+        if not placed_this_round:
+            break  # every category's candidates are exhausted
+
     return tuple(attractions)
 
 

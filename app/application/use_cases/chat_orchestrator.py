@@ -167,9 +167,17 @@ def _wants_detailed_response(message: str) -> bool:
 #: returning restaurants only. A message that explicitly asks "what's here"
 #: in general must widen the search back out, not stay crowded out by
 #: whatever narrow thing was mentioned first.
+#: "itinerary" itself belongs here too, not just its synonyms — live-observed:
+#: the turn that *establishes* a trip is always forced to `TRIP_PLANNING`
+#: intent regardless of wording (so the trip-establishing turn always gets
+#: full treatment; see `process_message`'s `was_complete_before_this_turn`
+#: branch), which means "plan a trip to X, love food, give me a detailed
+#: itinerary" never reaches the `ITINERARY_REQUEST` intent check below on
+#: that first turn — only the phrase match here does.
 _BROAD_ITINERARY_PHRASES = (
     "things to do", "places to visit", "places to see", "what to see",
-    "what to do", "sightseeing", "what all is there",
+    "what to do", "sightseeing", "what all is there", "itinerary",
+    "day by day", "day-by-day", "full plan",
 )
 _BROAD_ITINERARY_SPREAD = (
     AttractionType.LANDMARK,
@@ -178,12 +186,30 @@ _BROAD_ITINERARY_SPREAD = (
     AttractionType.MUSEUM,
     AttractionType.CULTURAL_SITE,
     AttractionType.RESTAURANT,
+    AttractionType.SPORTS_FACILITY,
 )
 
 
 def _wants_broad_itinerary(message: str) -> bool:
     lowered = message.lower()
     return any(phrase in lowered for phrase in _BROAD_ITINERARY_PHRASES)
+
+
+#: How many of the most recent user turns `_recent_user_text` joins.
+_RECENT_USER_TURNS_FOR_BREADTH_CHECK = 3
+
+
+def _recent_user_text(conversation: Conversation) -> str:
+    """The last few user turns, joined — live-observed: a from-scratch
+    itinerary ask that also names an ambiguous destination ("Udaipur,
+    Rajasthan, give me a detailed itinerary") gets its category breadth
+    computed on the *next* turn, once the destination is actually resolved —
+    but that turn's own text is just the disambiguation reply ("1"), which
+    carries none of the original wording. Checking `_wants_broad_itinerary`
+    against the last few turns rather than only the current one means the
+    itinerary ask one turn back still counts."""
+    user_messages = [m.content for m in conversation.messages if m.role == "user"]
+    return " ".join(user_messages[-_RECENT_USER_TURNS_FOR_BREADTH_CHECK:])
 
 #: How many geocoding candidates a destination-clarification turn offers.
 #: Mirrors `GeocodingPort.DEFAULT_SEARCH_LIMIT` — enough to disambiguate
@@ -1278,7 +1304,10 @@ class ChatOrchestrator:
         if intent not in (ChatIntent.GENERAL_CHAT, ChatIntent.PACKING_REQUEST):
             assert intelligence is not None
             preferred_types = self._interests_to_attraction_types(
-                context.interests, message=user_message
+                context.interests,
+                message=user_message,
+                intent=intent,
+                broad_check_text=_recent_user_text(conversation),
             )
             attraction_context = (
                 context.merge(destination=search_area) if search_area is not None else context
@@ -1335,7 +1364,12 @@ class ChatOrchestrator:
         return tuple(selected)
 
     def _interests_to_attraction_types(
-        self, interests: tuple[str, ...], *, message: str = ""
+        self,
+        interests: tuple[str, ...],
+        *,
+        message: str = "",
+        intent: ChatIntent | None = None,
+        broad_check_text: str = "",
     ) -> tuple[AttractionType, ...]:
         """Map user interests to attraction types.
 
@@ -1347,6 +1381,25 @@ class ChatOrchestrator:
         the extraction prompt). A category the user explicitly named in this
         turn must not be missed just because that one call's extraction
         didn't surface it.
+
+        Live-observed regression, a second instance of the same class of bug
+        `_BROAD_ITINERARY_SPREAD` already exists for: `TripContext.interests`
+        only ever accumulates, so a trip where the user mentioned "food" on
+        turn one stayed food-only forever after — asking for "a detailed
+        itinerary" later still only ever fetched restaurants, no viewpoints,
+        monuments, or anything else, because `intent` never widened the
+        category set on its own, only specific trigger phrases
+        (`_wants_broad_itinerary`) did, and "itinerary" itself was never one
+        of them. `itinerary_request` is inherently a "give me the whole day"
+        ask, not a request for one category, so it now widens unconditionally
+        — on top of, never instead of, whatever specific interests were
+        actually named, so "an itinerary heavy on sports" still gets sports
+        specifically as well as the broad spread.
+
+        `broad_check_text`, when given, is checked instead of `message` for
+        the broad-itinerary-phrase trigger specifically (`_recent_user_text`)
+        — the exact-keyword interest scan below always stays scoped to this
+        turn's own `message`, never blurred across turns.
         """
         mapping = {
             "beach": AttractionType.BEACH,
@@ -1398,7 +1451,9 @@ class ChatOrchestrator:
                 if key in haystack:
                     types.append(atype)
 
-        if message and _wants_broad_itinerary(message):
+        broad_text = broad_check_text or message
+        wants_broad = bool(broad_text) and _wants_broad_itinerary(broad_text)
+        if intent is ChatIntent.ITINERARY_REQUEST or wants_broad:
             types.extend(_BROAD_ITINERARY_SPREAD)
 
         seen: set[AttractionType] = set()
