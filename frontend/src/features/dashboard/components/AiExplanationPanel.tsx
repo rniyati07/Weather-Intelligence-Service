@@ -1,4 +1,4 @@
-import { RefreshCw, Sparkles } from 'lucide-react'
+import { CloudSun, RefreshCw } from 'lucide-react'
 import { useState } from 'react'
 
 import { ErrorState } from '@/components/feedback/ErrorState'
@@ -34,8 +34,8 @@ export interface AiExplanationPanelProps {
  *
  *  · Titled "AI Explanation". Never "advice", "advisor" or "recommendation" —
  *    the product must not imply the model formed a judgement (ADR-005/010).
- *  · Visually distinct (violet surface, AI glyph) so a user can tell generated
- *    text from computed data without reading the label.
+ *  · Visually distinct (insight-gold surface, AI glyph) so a user can tell
+ *    generated text from computed data without reading the label.
  *  · **Nothing here is ever parsed for a value.** Every number on this page
  *    comes from the structured payload; this text only restates them.
  */
@@ -52,7 +52,7 @@ export function AiExplanationPanel({
     <Card variant="ai" className="flex flex-col gap-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="flex items-center gap-2.5 text-h3 font-semibold text-heading">
-          <Sparkles className="size-5 text-ai-accent" aria-hidden="true" />
+          <CloudSun className="size-5 text-ai-accent" aria-hidden="true" />
           {AI_PANEL_TITLE}
         </h2>
 
@@ -108,7 +108,7 @@ export function AiExplanationPanel({
               See a plain-language summary of this trip&rsquo;s intelligence.
             </p>
             <Button variant="secondary" size="sm" onClick={onRetry}>
-              <Sparkles aria-hidden="true" />
+              <CloudSun aria-hidden="true" />
               Generate explanation
             </Button>
           </div>

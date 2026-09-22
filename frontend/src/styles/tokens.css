@@ -22,27 +22,38 @@
    * LAYER 1 — PRIMITIVE PALETTE (FDS §9.2)
    * ================================================================== */
 
-  /* Brand — cool teal-slate. The accent is a restrained mint rather than a
-   * saturated sky-blue: analytical, closer to an instrument panel than a
-   * consumer weather app. */
-  --brand-50: #eefbf7;
-  --brand-100: #d3f3ea;
-  --brand-400: #6ddbc0;
-  --brand-500: #14907a;
-  --brand-600: #0d6b5b;
-  --brand-700: #0a4a41;
-  --brand-800: #0d1f26;
-  --brand-900: #070f14;
+  /* Brand — a saturated jewel emerald, not a desaturated corporate teal. Paired
+   * with the gold accent below, emerald-and-gold is a deliberate luxury
+   * pairing (think emerald jewellery, not eco-SaaS mint) that still reads as
+   * "grounded, analytical" rather than a random bright hue. */
+  --brand-50: #e6f9f1;
+  --brand-100: #c3f0dc;
+  --brand-400: #22c98f;
+  --brand-500: #059669;
+  --brand-600: #047857;
+  --brand-700: #065f46;
+  --brand-800: #0a3d2c;
+  --brand-900: #052e22;
 
-  /* Amber — travel and sun. The single warm note against a cool base. */
-  --amber-100: #fdf0df;
-  --amber-400: #f0a44e;
-  --amber-500: #e8871e;
+  /* Amber — a genuinely vivid gold, not a muted champagne. The energetic note
+   * against the emerald base: a pull-quote number in a glossy deck, not a
+   * quiet sunshine tint. */
+  --amber-100: #fef3d7;
+  --amber-400: #fbbf24;
+  --amber-500: #d97706;
+
+  /* Warm neutrals — the canvas. A warm ivory rather than cool slate-white:
+   * on-brand with the emerald/gold pairing, and reads as considered rather
+   * than a default Tailwind gray. Cards sit on `--neutral-0` (crisp white)
+   * so they lift visibly off this warmer page background. */
+  --cream-50: #fdfbf3;
+  --cream-100: #f5efdc;
 
   /* Signal hues. The light-mode values are deliberately NOT pure red/amber/
    * green: they are darkened for AA text contrast on white and chosen to stay
    * separable under deuteranopia and protanopia. The -dark variants are
-   * lightened ~15% for contrast on dark surfaces (FDS §9.2). */
+   * lightened ~15% for contrast on dark surfaces (FDS §9.2). Functional risk
+   * colour, unrelated to brand — never retuned for aesthetics. */
   --green-600: #0f7b5f;
   --green-400: #34d399;
   --green-tint-light: #e6f4ef;
@@ -69,31 +80,34 @@
   --neutral-800: #1e293b;
   --neutral-900: #0f172a;
 
-  /* Violet — reserved exclusively for AI-generated surfaces, so users can tell
-   * generated text from computed data *without reading the label*. */
-  --violet-500: #6d4aff;
-  --violet-400: #a78bfa;
-  --violet-tint-light: #f5f3ff;
-  --violet-tint-dark: #191634;
-  --violet-line-light: #ddd6fe;
-  --violet-line-dark: #362f63;
+  /* Insight gold — reserved exclusively for AI-generated surfaces, so users
+   * can tell generated text from computed data *without reading the label*.
+   * Drawn from the same gold family as the brand accent rather than a
+   * separate purple: a generic violet/gradient tint is the single most
+   * recognisable "this is an AI product" visual cliché, and pulling
+   * generated-content styling into the house palette instead reads as one
+   * coherent brand rather than a chatbot bolted onto a dashboard. */
+  --insight-500: #b45309;
+  --insight-400: #fbbf24;
+  --insight-tint-light: #fef3d7;
+  --insight-tint-dark: #2b1e0c;
+  --insight-line-light: #fde3a7;
+  --insight-line-dark: #4a3410;
 
   /* =====================================================================
-   * LAYER 2 — SEMANTIC TOKENS · LIGHT THEME
-   * Dark is what ships (see `.dark`), but light is kept complete and in sync
-   * so switching is a class toggle rather than a project.
+   * LAYER 2 — SEMANTIC TOKENS · LIGHT THEME (the shipping default)
    * ================================================================== */
 
-  --background: var(--neutral-50);
+  --background: var(--cream-50);
   --foreground: var(--neutral-800);
   --heading: var(--neutral-900);
-  --muted: var(--neutral-100);
+  --muted: var(--cream-100);
   --muted-foreground: var(--neutral-600);
   --subtle-foreground: var(--neutral-400);
 
   --surface: var(--neutral-0);
   --surface-raised: var(--neutral-0);
-  --surface-sunken: var(--neutral-100);
+  --surface-sunken: var(--cream-100);
   --overlay: rgb(15 23 42 / 0.4);
 
   --border-subtle: var(--neutral-200);
@@ -112,7 +126,7 @@
   --accent-foreground: var(--brand-900);
   --accent-subtle: var(--amber-100);
 
-  --secondary: var(--neutral-100);
+  --secondary: var(--cream-100);
   --secondary-foreground: var(--neutral-800);
 
   /* Risk. `advisory` and `provider status` are aliases of these three, not new
@@ -130,56 +144,61 @@
   --destructive: var(--red-700);
   --destructive-foreground: var(--neutral-0);
 
-  --ai-surface: var(--violet-tint-light);
-  --ai-border: var(--violet-line-light);
-  --ai-accent: var(--violet-500);
+  --ai-surface: var(--insight-tint-light);
+  --ai-border: var(--insight-line-light);
+  --ai-accent: var(--insight-500);
   --ai-foreground: var(--neutral-800);
 
-  /* Elevation (FDS §9.6) — soft and low-spread: premium, not heavy. */
-  --elevation-xs: 0 1px 2px rgb(15 23 42 / 0.04);
-  --elevation-sm: 0 2px 8px rgb(15 23 42 / 0.06);
-  --elevation-md: 0 4px 16px rgb(15 23 42 / 0.08);
-  --elevation-lg: 0 12px 32px rgb(15 23 42 / 0.12);
-  --elevation-focus: 0 0 0 3px rgb(47 85 151 / 0.35);
+  /* Elevation (FDS §9.6) — soft and low-spread: lavish, not heavy. Warm-tinted
+   * rather than cool slate, so a shadow reads as depth on the ivory canvas
+   * instead of a mismatched cool cast. */
+  --elevation-xs: 0 1px 2px rgb(64 44 12 / 0.05);
+  --elevation-sm: 0 2px 8px rgb(64 44 12 / 0.07);
+  --elevation-md: 0 4px 16px rgb(64 44 12 / 0.09);
+  --elevation-lg: 0 12px 32px rgb(64 44 12 / 0.14);
+  --elevation-focus: 0 0 0 3px rgb(5 150 105 / 0.35);
 
   color-scheme: light;
 }
 
 /* ===========================================================================
- * LAYER 2 — SEMANTIC TOKENS · DARK THEME (the shipping default)
+ * LAYER 2 — SEMANTIC TOKENS · DARK THEME
+ * Kept fully tokenised — a class toggle away — for anyone who prefers it,
+ * re-hued to the same emerald/gold family so switching never feels like a
+ * different product.
  * ======================================================================== */
 
 .dark {
   --background: var(--brand-900);
-  --foreground: #b4c6cc;
+  --foreground: #cfe3d8;
   --heading: var(--neutral-0);
-  --muted: #10202a;
-  --muted-foreground: #8ba3ad;
-  --subtle-foreground: #627a85;
+  --muted: #0d3a2a;
+  --muted-foreground: #8fb3a3;
+  --subtle-foreground: #5f8a76;
 
-  --surface: #0b1b22;
-  --surface-raised: #102630;
-  --surface-sunken: #050b0f;
-  --overlay: rgb(2 8 11 / 0.66);
+  --surface: #073a2a;
+  --surface-raised: #0a4632;
+  --surface-sunken: #042118;
+  --overlay: rgb(2 15 10 / 0.66);
 
-  --border-subtle: #1a3039;
-  --border-strong: #294853;
-  --input: #1a3039;
+  --border-subtle: #0f4a36;
+  --border-strong: #1f6b4e;
+  --input: #0f4a36;
   --ring: var(--brand-400);
 
   --primary: var(--brand-400);
-  --primary-hover: #8ee6cf;
-  --primary-active: #a5eeda;
+  --primary-hover: #4fdba8;
+  --primary-active: #7ee8c1;
   --primary-foreground: var(--brand-900);
-  --primary-subtle: #0f2b2a;
+  --primary-subtle: #0d3a2a;
 
   --accent: var(--amber-500);
   --accent-hover: var(--amber-400);
   --accent-foreground: var(--brand-900);
   --accent-subtle: #2b1e0c;
 
-  --secondary: #16323c;
-  --secondary-foreground: #cfe2e7;
+  --secondary: #0d3a2a;
+  --secondary-foreground: #cfe3d8;
 
   --risk-low: var(--green-400);
   --risk-low-surface: #0c2b23;
@@ -187,8 +206,8 @@
   --risk-moderate-surface: #2e2410;
   --risk-high: var(--red-400);
   --risk-high-surface: #2e1618;
-  --risk-unknown: #8ba3ad;
-  --risk-unknown-surface: #10202a;
+  --risk-unknown: #8fb3a3;
+  --risk-unknown-surface: #0d3a2a;
 
   --destructive: var(--red-400);
   --destructive-foreground: var(--brand-900);
@@ -196,10 +215,10 @@
   /* The assistant no longer gets a tinted container — a reply reads as
    * primary text, and only the small avatar carries the AI cue. These stay
    * defined for that avatar and for the dashboard's AI Explanation card. */
-  --ai-surface: #131f33;
-  --ai-border: #253253;
-  --ai-accent: #9db8f5;
-  --ai-foreground: #b4c6cc;
+  --ai-surface: var(--insight-tint-dark);
+  --ai-border: var(--insight-line-dark);
+  --ai-accent: var(--insight-400);
+  --ai-foreground: #cfe3d8;
 
   /* A shadow tuned for light surfaces reads as nothing on a dark one, so these
    * are deepened rather than reused. */
@@ -207,7 +226,7 @@
   --elevation-sm: 0 2px 8px rgb(0 0 0 / 0.35);
   --elevation-md: 0 4px 16px rgb(0 0 0 / 0.45);
   --elevation-lg: 0 12px 32px rgb(0 0 0 / 0.55);
-  --elevation-focus: 0 0 0 3px rgb(91 127 191 / 0.45);
+  --elevation-focus: 0 0 0 3px rgb(34 201 143 / 0.45);
 
   color-scheme: dark;
 }

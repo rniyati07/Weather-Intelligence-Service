@@ -9,8 +9,10 @@
 export const THEMES = ['dark', 'light'] as const
 export type Theme = (typeof THEMES)[number]
 
-/** Dark ships first (FDS §9.2); light is fully tokenised and one class away. */
-export const DEFAULT_THEME: Theme = 'dark'
+/** Light ships first — the vibrant jewel-tone palette reads richest on a warm,
+ * bright canvas; dark stays fully tokenised and one class away for anyone who
+ * prefers it. */
+export const DEFAULT_THEME: Theme = 'light'
 
 /** Class applied to <html>. Kept in sync with the `@custom-variant` in globals.css. */
 export const THEME_CLASS: Record<Theme, string> = {

@@ -12,9 +12,9 @@ function isTheme(value: unknown): value is Theme {
 /**
  * Theme state, applied to `<html>`.
  *
- * Dark is the shipping default and `index.html` sets the class inline so the
- * first paint is already dark — the alternative is a white flash before React
- * mounts, which on a dark product looks like a bug.
+ * Light is the shipping default and `index.html` sets the class inline so the
+ * first paint already matches — the alternative is a flash of the wrong
+ * theme before React mounts, which looks like a bug either direction.
  *
  * The preference is stored rather than read from `prefers-color-scheme`,
  * because this product *chooses* dark rather than following the OS. Honouring

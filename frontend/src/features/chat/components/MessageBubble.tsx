@@ -1,4 +1,4 @@
-import { Sparkles } from 'lucide-react'
+import { CloudSun } from 'lucide-react'
 
 import type { ChatMessage } from '@/types'
 import { getMessageLlmGenerated } from '@/utils/chat'
@@ -44,7 +44,7 @@ export function MessageBubble({ message }: MessageBubbleProps) {
         className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-md bg-ai-surface text-ai-accent"
         aria-hidden="true"
       >
-        <Sparkles className="size-3.5" />
+        <CloudSun className="size-3.5" />
       </span>
 
       <div className="min-w-0 flex-1">

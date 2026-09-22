@@ -27,8 +27,13 @@ export const buttonVariants = cva(
   {
     variants: {
       variant: {
+        // A gradient sweep rather than a flat fill — the one deliberately
+        // "lavish" flourish, reserved for the highest-visibility CTA so it
+        // stays a signature rather than becoming wallpaper. Still entirely
+        // token-based (`from-primary`/`to-accent`), so it passes the same
+        // no-hex rule as everything else here.
         primary:
-          'bg-primary text-primary-foreground hover:bg-primary-hover active:bg-primary-active',
+          'bg-gradient-to-br from-primary to-primary-hover text-primary-foreground hover:from-primary-hover hover:to-accent active:opacity-90',
         /** Highest-intent CTA. Used sparingly enough to stay meaningful. */
         accent: 'bg-accent text-accent-foreground hover:bg-accent-hover',
         secondary:
@@ -53,7 +58,7 @@ export const buttonVariants = cva(
   },
 )
 
-/** Card — FDS §9.12. `ai` is the violet surface reserved for generated content. */
+/** Card — FDS §9.12. `ai` is the insight-gold surface reserved for generated content. */
 export const cardVariants = cva('rounded-lg border transition-shadow duration-150 ease-out', {
   variants: {
     variant: {

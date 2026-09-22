@@ -1,4 +1,4 @@
-import { Sparkles } from 'lucide-react'
+import { CloudSun } from 'lucide-react'
 
 import { Card } from '@/components/ui/card'
 import { AI_PANEL_TITLE } from '@/constants/app'
@@ -10,9 +10,10 @@ import { AI_PANEL_TITLE } from '@/constants/app'
  * produced the verdict will discount it, and they would be right to; the value
  * of the product rests on the separation being real and legible.
  *
- * Deliberately **not** rendered on the violet AI surface. That surface means
- * "this text was generated", and using it for a human-written explanation *of*
- * the AI would undermine the one visual convention this page is defending.
+ * Deliberately **not** rendered on the insight-gold AI surface. That surface
+ * means "this text was generated", and using it for a human-written
+ * explanation *of* the AI would undermine the one visual convention this page
+ * is defending.
  */
 export function AiRole() {
   return (
@@ -38,7 +39,7 @@ export function AiRole() {
 
         <div className="flex flex-col gap-3 border-t border-border pt-4">
           <h3 className="flex items-center gap-2.5 text-h4 font-semibold text-heading">
-            <Sparkles className="size-5 text-ai-accent" aria-hidden="true" />
+            <CloudSun className="size-5 text-ai-accent" aria-hidden="true" />
             How you can tell them apart
           </h3>
 

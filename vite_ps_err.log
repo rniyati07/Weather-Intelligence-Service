@@ -1,0 +1,54 @@
+8:33:02 pm [vite] (client) [console.error] ReferenceError: Sparkles is not defined
+    at MessageBubble (http://localhost:5173/src/features/chat/components/MessageBubble.tsx?t=1790089381299:46:38)
+    at Object.react_stack_bottom_frame (http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=e6a9c6b2:12864:12)
+    at renderWithHooks (http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=e6a9c6b2:4211:19)
+    at updateFunctionComponent (http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=e6a9c6b2:5567:16)
+    at beginWork (http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=e6a9c6b2:6138:20)
+    at runWithFiberInDEV (http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=e6a9c6b2:850:66)
+    at performUnitOfWork (http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=e6a9c6b2:8427:92)
+    at workLoopSync (http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=e6a9c6b2:8323:37)
+    at renderRootSync (http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=e6a9c6b2:8307:6)
+    at performWorkOnRoot (http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=e6a9c6b2:7992:27)
+
+The above error occurred in the <MessageBubble> component.
+
+React will try to recreate this component tree from scratch using the error boundary you provided, RenderErrorBoundary.
+
+8:33:02 pm [vite] (client) [console.error] React Router caught the following error during render ReferenceError: Sparkles is not defined
+    at MessageBubble (http://localhost:5173/src/features/chat/components/MessageBubble.tsx?t=1790089381299:46:38)
+    at Object.react_stack_bottom_frame (http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=e6a9c6b2:12864:12)
+    at renderWithHooks (http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=e6a9c6b2:4211:19)
+    at updateFunctionComponent (http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=e6a9c6b2:5567:16)
+    at beginWork (http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=e6a9c6b2:6138:20)
+    at runWithFiberInDEV (http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=e6a9c6b2:850:66)
+    at performUnitOfWork (http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=e6a9c6b2:8427:92)
+    at workLoopSync (http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=e6a9c6b2:8323:37)
+    at renderRootSync (http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=e6a9c6b2:8307:6)
+    at performWorkOnRoot (http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=e6a9c6b2:7992:27)
+8:33:58 pm [vite] (client) [console.error] ReferenceError: Sparkles is not defined
+    at TripIdentityHeader (http://localhost:5173/src/features/chat/components/TripIdentityHeader.tsx?t=1790089436856:27:41)
+    at Object.react_stack_bottom_frame (http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=e6a9c6b2:12864:12)
+    at renderWithHooks (http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=e6a9c6b2:4211:19)
+    at updateFunctionComponent (http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=e6a9c6b2:5567:16)
+    at beginWork (http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=e6a9c6b2:6138:20)
+    at runWithFiberInDEV (http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=e6a9c6b2:850:66)
+    at performUnitOfWork (http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=e6a9c6b2:8427:92)
+    at workLoopSync (http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=e6a9c6b2:8323:37)
+    at renderRootSync (http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=e6a9c6b2:8307:6)
+    at performWorkOnRoot (http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=e6a9c6b2:7992:27)
+
+The above error occurred in the <TripIdentityHeader> component.
+
+React will try to recreate this component tree from scratch using the error boundary you provided, RenderErrorBoundary.
+
+8:33:58 pm [vite] (client) [console.error] React Router caught the following error during render ReferenceError: Sparkles is not defined
+    at TripIdentityHeader (http://localhost:5173/src/features/chat/components/TripIdentityHeader.tsx?t=1790089436856:27:41)
+    at Object.react_stack_bottom_frame (http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=e6a9c6b2:12864:12)
+    at renderWithHooks (http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=e6a9c6b2:4211:19)
+    at updateFunctionComponent (http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=e6a9c6b2:5567:16)
+    at beginWork (http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=e6a9c6b2:6138:20)
+    at runWithFiberInDEV (http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=e6a9c6b2:850:66)
+    at performUnitOfWork (http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=e6a9c6b2:8427:92)
+    at workLoopSync (http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=e6a9c6b2:8323:37)
+    at renderRootSync (http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=e6a9c6b2:8307:6)
+    at performWorkOnRoot (http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=e6a9c6b2:7992:27)

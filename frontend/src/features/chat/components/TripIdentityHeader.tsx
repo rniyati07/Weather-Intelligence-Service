@@ -1,4 +1,4 @@
-import { CalendarDays, Sparkles, Tags } from 'lucide-react'
+import { CalendarDays, Gauge, Tags } from 'lucide-react'
 
 import type { TripContextPayload } from '@/types'
 import { formatDateRange } from '@/utils/date'
@@ -28,7 +28,7 @@ export function TripIdentityHeader({ trip }: TripIdentityHeaderProps) {
     <header className="flex flex-wrap items-end justify-between gap-x-6 gap-y-4 px-5 pt-6 pb-5 md:px-8 md:pt-8">
       <div className="min-w-0">
         <p className="flex items-center gap-2 text-caption font-semibold tracking-[0.14em] text-primary uppercase">
-          <Sparkles className="size-3.5" aria-hidden="true" />
+          <Gauge className="size-3.5" aria-hidden="true" />
           Trip intelligence
         </p>
 

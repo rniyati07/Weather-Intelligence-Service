@@ -100,11 +100,12 @@
    * --space-6 (24px) and no parallel scale is needed. */
   --spacing: 0.25rem;
 
-  /* --- Radius (FDS §9.6) ------------------------------------------------- */
-  --radius-sm: 0.375rem; /* 6 · chips */
-  --radius-md: 0.625rem; /* 10 · buttons, inputs */
-  --radius-lg: 0.875rem; /* 14 · cards */
-  --radius-xl: 1.25rem; /* 20 · modals */
+  /* --- Radius (FDS §9.6) — a touch more generous than a strict institutional
+   * scale: energetic and lavish reads as inviting, not razor-edged. ------- */
+  --radius-sm: 0.5rem; /* 8 · chips */
+  --radius-md: 0.75rem; /* 12 · buttons, inputs */
+  --radius-lg: 1rem; /* 16 · cards */
+  --radius-xl: 1.5rem; /* 24 · modals */
 
   /* --- Shadow (FDS §9.6) ------------------------------------------------- */
   --shadow-xs: var(--elevation-xs);
@@ -240,5 +241,17 @@
 
   &:focus-visible {
     transform: translateY(0);
+  }
+}
+
+/* A single sweeping bar inside a hairline track — `TypingIndicator`'s
+ * "computing", not a bouncing-dots chat bubble. Capped by the
+ * `prefers-reduced-motion` rule above like every other animation here. */
+@keyframes loading-sweep {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(300%);
   }
 }
